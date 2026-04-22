@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { Plus, X, Layers, LogIn, LogOut, Edit, Trash2, Target, CreditCard, DollarSign, Smartphone, ArrowDownCircle, ArrowUpCircle } from 'lucide-vue-next'
 import { supabase } from './supabase'
 
@@ -85,6 +85,14 @@ const METODOS_PAGO = [
 const txns = ref([])
 const goals = ref([])
 const deudas = ref([])
+
+const myBalAnimating = ref(false)
+const pBalAnimating = ref(false)
+const sBalAnimating = ref(false)
+
+let myBalTimer = null
+let pBalTimer = null
+let sBalTimer = null
 
 // ==========================================
 // AUTENTICACIÓN
@@ -304,6 +312,24 @@ const sBal = computed(() => {
     else bal -= montoReal
   })
   return bal
+})
+
+watch(myBal, () => {
+  myBalAnimating.value = true
+  clearTimeout(myBalTimer)
+  myBalTimer = setTimeout(() => { myBalAnimating.value = false }, 500)
+})
+
+watch(pBal, () => {
+  pBalAnimating.value = true
+  clearTimeout(pBalTimer)
+  pBalTimer = setTimeout(() => { pBalAnimating.value = false }, 500)
+})
+
+watch(sBal, () => {
+  sBalAnimating.value = true
+  clearTimeout(sBalTimer)
+  sBalTimer = setTimeout(() => { sBalAnimating.value = false }, 500)
 })
 
 const filtTxns = computed(() => {
@@ -758,8 +784,8 @@ const aportarMeta = async (meta) => {
       <div v-else>
         <!-- BALANCES -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
-            <div class="flex items-center justify-between">
+          <div :class="['transform-gpu rounded-lg border p-6 shadow-md flex items-center justify-between', myBalAnimating ? 'animate-jump border-emerald-200 bg-gradient-to-br from-white to-emerald-50' : 'border-emerald-200 bg-gradient-to-br from-white to-emerald-50']">
+            <div class="flex items-center justify-between w-full gap-4">
               <div>
                 <p class="text-sm text-gray-600">Tu saldo</p>
                 <p class="text-2xl font-bold text-emerald-600">{{ fmt(myBal) }}</p>
@@ -769,8 +795,8 @@ const aportarMeta = async (meta) => {
               </div>
             </div>
           </div>
-          <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
-            <div class="flex items-center justify-between">
+          <div :class="['transform-gpu rounded-lg border p-6 shadow-md flex items-center justify-between', pBalAnimating ? 'animate-jump border-blue-200 bg-gradient-to-br from-white to-blue-50' : 'border-blue-200 bg-gradient-to-br from-white to-blue-50']">
+            <div class="flex items-center justify-between w-full gap-4">
               <div>
                 <p class="text-sm text-gray-600">Saldo pareja</p>
                 <p class="text-2xl font-bold text-blue-600">{{ fmt(pBal) }}</p>
@@ -780,8 +806,8 @@ const aportarMeta = async (meta) => {
               </div>
             </div>
           </div>
-          <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
-            <div class="flex items-center justify-between">
+          <div :class="['transform-gpu rounded-lg border p-6 shadow-md flex items-center justify-between', sBalAnimating ? 'animate-jump border-amber-200 bg-gradient-to-br from-white to-amber-50' : 'border-amber-200 bg-gradient-to-br from-white to-amber-50']">
+            <div class="flex items-center justify-between w-full gap-4">
               <div>
                 <p class="text-sm text-gray-600">Fondo común</p>
                 <p class="text-2xl font-bold text-amber-600">{{ fmt(sBal) }}</p>
@@ -810,40 +836,51 @@ const aportarMeta = async (meta) => {
 
         <!-- CONTENIDO DE PESTAÑAS -->
         <div class="bg-white rounded-lg shadow-md p-6">
-          <!-- RESUMEN -->
-          <div v-if="activeTab === 'Resumen'">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 class="text-lg font-semibold mb-4">Últimos Movimientos</h3>
-                <div class="space-y-3">
-                  <div v-for="txn in txns.slice(0, 5)" :key="txn.id" class="flex justify-between p-3 bg-gray-50 rounded-lg">
-                    <div class="flex gap-2 items-center">
-                      <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" :class="txn.es_ingreso ? 'text-emerald-500' : 'text-red-500'" class="w-5 h-5"/>
-                      <div><p class="font-medium">{{ txn.descripcion }}</p><p class="text-sm text-gray-600">{{ formatDate(txn.creado_en) }}</p></div>
-                    </div>
-                    <div class="text-right">
-                      <p :class="['font-semibold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-600']">
-                        {{ txn.es_ingreso ? '+' : '-' }}{{ fmt(txn.monto) }}
-                      </p>
-                      <p class="text-xs text-gray-500">{{ tLbl(getRelativeType(txn)) }}</p>
+          <Transition name="fade" mode="out-in">
+            <div :key="activeTab">
+              <!-- RESUMEN -->
+              <div v-if="activeTab === 'Resumen'">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 class="text-lg font-semibold mb-4">Últimos Movimientos</h3>
+                    <div class="space-y-3">
+                      <div v-for="txn in txns.slice(0, 5)" :key="txn.id" class="flex justify-between p-3 bg-gray-50 rounded-lg">
+                        <div class="flex gap-2 items-center">
+                          <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" :class="txn.es_ingreso ? 'text-emerald-500' : 'text-red-500'" class="w-5 h-5"/>
+                          <div>
+                            <p class="font-medium">{{ txn.descripcion }}</p>
+                            <p class="text-sm text-gray-600">{{ formatDate(txn.creado_en) }}</p>
+                          </div>
+                        </div>
+                        <div class="text-right">
+                          <p :class="['font-semibold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-600']">
+                            {{ txn.es_ingreso ? '+' : '-' }}{{ fmt(txn.monto) }}
+                          </p>
+                          <p class="text-xs text-gray-500">{{ tLbl(getRelativeType(txn)) }}</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-              <div>
-                <h3 class="text-lg font-semibold mb-4 text-gray-700">Deudas Activas</h3>
-                <div class="space-y-3">
-                  <div v-for="d in deudas.slice(0, 3)" :key="d.id" class="p-3 bg-red-50 rounded-lg shadow-sm">
-                    <div class="flex justify-between items-start mb-2"><p class="font-medium">{{ d.descripcion }}</p><p class="text-sm text-gray-600">{{ pctDeuda(d) }}%</p></div>
-                    <div class="w-full bg-gray-200 rounded-full h-2 mb-2"><div class="h-2 rounded-full bg-red-500" :style="{ width: pctDeuda(d) + '%' }"></div></div>
-                    <p class="text-sm text-gray-600">Falta: {{ fmt(d.monto - (d.monto_pagado || 0)) }}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <!-- GASTOS -->
+                  <div>
+                    <h3 class="text-lg font-semibold mb-4 text-gray-700">Deudas Activas</h3>
+                    <div class="space-y-3">
+                      <div v-for="d in deudas.slice(0, 3)" :key="d.id" class="p-3 bg-red-50 rounded-lg shadow-sm">
+                        <div class="flex justify-between items-start mb-2">
+                          <p class="font-medium">{{ d.descripcion }}</p>
+                          <p class="text-sm text-gray-600">{{ pctDeuda(d) }}%</p>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mb-2">
+                          <div class="h-2 rounded-full bg-red-500" :style="{ width: pctDeuda(d) + '%' }"></div>
+                        </div>
+                        <p class="text-sm text-gray-600">Falta: {{ fmt(d.monto - (d.monto_pagado || 0)) }}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- GASTOS -->
           <div v-if="activeTab === 'Movimientos'">
             <div class="flex justify-between items-center mb-4">
               <h2 class="text-xl font-semibold text-gray-700">Historial de Movimientos</h2>
@@ -992,6 +1029,8 @@ const aportarMeta = async (meta) => {
               </div>
             </div>
           </div>
+        </div>
+          </Transition>
         </div>
       </div>
     </div>
@@ -1197,3 +1236,27 @@ const aportarMeta = async (meta) => {
     </div>
   </div>
 </template>
+
+<style>
+@keyframes jump {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+.animate-jump {
+  animation: jump 500ms ease-in-out both;
+}
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 250ms ease, transform 250ms ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.fade-enter-to,
+.fade-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+</style>
