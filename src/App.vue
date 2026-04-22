@@ -790,38 +790,54 @@ const aportarMeta = async (meta) => {
       <!-- CONTENIDO PRINCIPAL -->
       <div v-else>
         <!-- BALANCES -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
+            <div class="flex items-center justify-between">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           <!-- Tu saldo -->
           <div class="bg-gradient-to-br from-white to-emerald-50 p-4 sm:p-6 rounded-lg shadow-md border border-emerald-200">
             <div class="flex justify-between items-start mb-4">
               <div>
                 <p class="text-sm text-gray-600">Tu saldo</p>
+                <p class="text-2xl font-bold text-emerald-600">{{ fmt(myBal) }}</p>
                 <p :class="['text-xl sm:text-2xl font-bold text-emerald-600', { 'animate-balance-update': myBalAnimating }]" :style="{ '--highlight-color': myBalHighlightColor }">{{ fmt(myBal) }}</p>
               </div>
+              <div class="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
+                <DollarSign class="w-6 h-6 text-emerald-600" />
               <div class="w-8 h-8 sm:w-10 sm:h-10 bg-emerald-100 rounded-full flex items-center justify-center">
                 <DollarSign class="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
               </div>
             </div>
           </div>
+          <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
+            <div class="flex items-center justify-between">
           <!-- Saldo pareja -->
           <div class="bg-gradient-to-br from-white to-blue-50 p-4 sm:p-6 rounded-lg shadow-md border border-blue-200">
             <div class="flex justify-between items-start mb-4">
               <div>
                 <p class="text-sm text-gray-600">Saldo pareja</p>
+                <p class="text-2xl font-bold text-blue-600">{{ fmt(pBal) }}</p>
                 <p :class="['text-xl sm:text-2xl font-bold text-blue-600', { 'animate-balance-update': pBalAnimating }]" :style="{ '--highlight-color': pBalHighlightColor }">{{ fmt(pBal) }}</p>
               </div>
+              <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <DollarSign class="w-6 h-6 text-blue-600" />
               <div class="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-full flex items-center justify-center">
                 <DollarSign class="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
               </div>
             </div>
           </div>
+          <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
+            <div class="flex items-center justify-between">
           <!-- Fondo común -->
           <div class="bg-gradient-to-br from-white to-amber-50 p-4 sm:p-6 rounded-lg shadow-md border border-amber-200">
             <div class="flex justify-between items-start mb-4">
               <div>
                 <p class="text-sm text-gray-600">Fondo común</p>
+                <p class="text-2xl font-bold text-amber-600">{{ fmt(sBal) }}</p>
                 <p :class="['text-xl sm:text-2xl font-bold text-amber-600', { 'animate-balance-update': sBalAnimating }]" :style="{ '--highlight-color': sBalHighlightColor }">{{ fmt(sBal) }}</p>
               </div>
+              <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                <DollarSign class="w-6 h-6 text-amber-600" />
               <div class="w-8 h-8 sm:w-10 sm:h-10 bg-amber-100 rounded-full flex items-center justify-center">
                 <DollarSign class="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
               </div>
