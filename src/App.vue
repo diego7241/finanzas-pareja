@@ -505,7 +505,7 @@ const deleteMeta = async (id) => {
 
 const deleteDeuda = async (id) => {
   // Verificar que la deuda sea del usuario actual
-  const deuda = deudas.value.find(d => t.id === id) // Buscar deuda
+  const deuda = deudas.value.find(d => d.id === id) // Buscar deuda
   if (!deuda || deuda.perfil_id !== miPerfil.value?.id) { // Verificar propiedad
     alert('Solo puedes eliminar tus propias deudas')
     return
