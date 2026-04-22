@@ -677,7 +677,7 @@ const aportarMeta = async (meta) => {
 
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- AUTENTICACIÓN --> 
+    <!-- AUTENTICACIÓN -->
     <div v-if="!session" class="flex items-center justify-center min-h-screen">
       <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <h1 class="text-3xl font-extrabold text-center text-blue-600 mb-6">Ahorro de tragonsite y gordita</h1>
@@ -693,21 +693,21 @@ const aportarMeta = async (meta) => {
 
     <!-- CONFIGURACIÓN INICIAL -->
     <div v-else-if="showConfig" class="flex items-center justify-center min-h-screen bg-blue-50">
-      <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+      <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-lg w-full max-w-sm sm:max-w-md max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold text-center mb-6 text-blue-600">Configuración Inicial</h2>
         <p class="text-gray-600 mb-4 text-center">Establece los saldos iniciales para comenzar tu aventura de ahorro.</p>
         <form @submit.prevent="guardarConfig" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tu saldo inicial</label>
-            <input v-model="configForm.miSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            <input v-model="configForm.miSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Saldo inicial de tu pareja</label>
-            <input v-model="configForm.parejaSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            <input v-model="configForm.parejaSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Fondo común inicial</label>
-            <input v-model="configForm.fondoComunInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            <input v-model="configForm.fondoComunInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
           </div>
           <button type="submit" class="w-full bg-green-500 text-white p-3 rounded-lg hover:bg-green-600 transition-colors duration-200">
             Guardar Configuración
@@ -717,7 +717,7 @@ const aportarMeta = async (meta) => {
     </div>
 
     <!-- APLICACIÓN PRINCIPAL -->
-    <div v-else class="max-w-4xl mx-auto p-4">
+    <div v-else class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <!-- HEADER -->
       <header class="flex justify-between items-center mb-6">
         <div>
@@ -870,7 +870,7 @@ const aportarMeta = async (meta) => {
 
             <!-- LISTA DE GASTOS -->
             <div class="space-y-3">
-              <div v-for="txn in filtTxns" :key="txn.id" class="flex justify-between items-center p-4 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150">
+              <div v-for="txn in filtTxns" :key="txn.id" class="flex justify-between items-center p-3 sm:p-4 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150">
                 <div class="flex items-center gap-3">
                   <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" :class="txn.es_ingreso ? 'text-emerald-500' : 'text-red-500'" class="w-5 h-5"/>
                     <div>
@@ -998,8 +998,8 @@ const aportarMeta = async (meta) => {
 
     <!-- MODALES -->
     <!-- MODAL CONEXIÓN DE PAREJAS -->
-    <div v-if="showConexionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"> 
-      <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+    <div v-if="showConexionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-lg w-full max-w-sm sm:max-w-md max-h-[90vh] overflow-y-auto">
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-lg font-semibold text-gray-800">Conectar con tu Pareja</h3>
           <button @click="showConexionModal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
@@ -1015,11 +1015,11 @@ const aportarMeta = async (meta) => {
                 type="text" 
                 :value="miPerfil?.codigo_pareja" 
                 readonly 
-                class="flex-1 p-2 border rounded bg-gray-100 font-mono text-center font-bold"
+                class="flex-1 p-2 border border-blue-300 rounded bg-blue-100 font-mono text-center font-bold text-blue-800"
               >
               <button 
                 @click="navigator.clipboard.writeText(miPerfil?.codigo_pareja)" 
-                class="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm font-medium"
+                class="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm font-medium transition-colors duration-200"
               >
                 Copiar
               </button>
@@ -1027,31 +1027,31 @@ const aportarMeta = async (meta) => {
             <p class="text-xs text-gray-500 mt-2">Comparte este código con tu pareja</p>
           </div>
  
-          <div class="border-t pt-4">
+          <div class="border-t border-gray-200 pt-4">
             <p class="text-sm text-gray-600 mb-2"><strong>Ingresa el código de tu pareja:</strong></p>
             <input 
               v-model="codigoIngresado" 
               type="text" 
               placeholder="Ej: ABC12345" 
-              class="w-full p-3 border rounded-lg uppercase"
+              class="w-full p-3 border border-gray-300 rounded-lg uppercase focus:ring-blue-500 focus:border-blue-500"
               :disabled="conectandoPareja"
             >
           </div>
  
-          <p v-if="errorConexion" class="text-red-600 text-sm bg-red-50 p-3 rounded">{{ errorConexion }}</p>
+          <p v-if="errorConexion" class="text-red-600 text-sm bg-red-50 p-3 rounded border border-red-200">{{ errorConexion }}</p>
  
           <div class="flex gap-3 justify-end">
             <button 
               @click="showConexionModal = false"
-              class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
               :disabled="conectandoPareja"
             >
               Cancelar
             </button>
             <button 
               @click="conectarPareja" 
-              :disabled="conectandoPareja" 
-              class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+              :disabled="conectandoPareja"
+              class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors duration-200"
             >
               {{ conectandoPareja ? 'Conectando...' : 'Conectar' }}
             </button>
