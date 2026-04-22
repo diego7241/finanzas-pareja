@@ -677,7 +677,7 @@ const aportarMeta = async (meta) => {
 
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- AUTENTICACIÓN -->
+    <!-- AUTENTICACIÓN --> 
     <div v-if="!session" class="flex items-center justify-center min-h-screen">
       <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <h1 class="text-3xl font-extrabold text-center text-blue-600 mb-6">Ahorro de tragonsite y gordita</h1>
@@ -692,7 +692,7 @@ const aportarMeta = async (meta) => {
     </div>
 
     <!-- CONFIGURACIÓN INICIAL -->
-    <div v-else-if="showConfig" class="flex items-center justify-center min-h-screen bg-blue-50">
+    <div v-else-if="showConfig" class="flex items-center justify-center min-h-screen bg-blue-50"> 
       <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-lg w-full max-w-sm sm:max-w-md max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold text-center mb-6 text-blue-600">Configuración Inicial</h2>
         <p class="text-gray-600 mb-4 text-center">Establece los saldos iniciales para comenzar tu aventura de ahorro.</p>
@@ -717,7 +717,7 @@ const aportarMeta = async (meta) => {
     </div>
 
     <!-- APLICACIÓN PRINCIPAL -->
-    <div v-else class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div v-else class="container mx-auto px-4 sm:px-6 lg:px-8 py-8"> 
       <!-- HEADER -->
       <header class="flex justify-between items-center mb-6">
         <div>
@@ -998,7 +998,7 @@ const aportarMeta = async (meta) => {
 
     <!-- MODALES -->
     <!-- MODAL CONEXIÓN DE PAREJAS -->
-    <div v-if="showConexionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div v-if="showConexionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"> 
       <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-lg w-full max-w-sm sm:max-w-md max-h-[90vh] overflow-y-auto">
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-lg font-semibold text-gray-800">Conectar con tu Pareja</h3>
