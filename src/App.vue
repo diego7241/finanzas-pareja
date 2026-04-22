@@ -677,14 +677,14 @@ const aportarMeta = async (meta) => {
 
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- AUTENTICACIÓN -->
+    <!-- AUTENTICACIÓN --> 
     <div v-if="!session" class="flex items-center justify-center min-h-screen">
       <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 class="text-2xl font-bold text-center mb-6">Finanzas de Pareja</h1>
+        <h1 class="text-3xl font-extrabold text-center text-blue-600 mb-6">Ahorro de tragonsite y gordita</h1>
         <form @submit.prevent="login" class="space-y-4">
-          <input v-model="email" type="email" placeholder="Email" class="w-full p-3 border rounded-lg" required>
-          <input v-model="password" type="password" placeholder="Contraseña" class="w-full p-3 border rounded-lg" required>
-          <button type="submit" :disabled="authLoading" class="w-full bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:opacity-50">
+          <input v-model="email" type="email" placeholder="Email" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+          <input v-model="password" type="password" placeholder="Contraseña" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+          <button type="submit" :disabled="authLoading" class="w-full bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors duration-200">
             <LogIn class="w-5 h-5 inline mr-2" />{{ authLoading ? 'Iniciando...' : 'Iniciar Sesión' }}
           </button>
         </form>
@@ -692,24 +692,24 @@ const aportarMeta = async (meta) => {
     </div>
 
     <!-- CONFIGURACIÓN INICIAL -->
-    <div v-else-if="showConfig" class="flex items-center justify-center min-h-screen bg-gray-50">
-      <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h2 class="text-2xl font-bold text-center mb-6">Configuración Inicial</h2>
-        <p class="text-gray-600 mb-4 text-center">Establece los saldos iniciales para comenzar</p>
+    <div v-else-if="showConfig" class="flex items-center justify-center min-h-screen bg-blue-50">
+      <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+        <h2 class="text-2xl font-bold text-center mb-6 text-blue-600">Configuración Inicial</h2>
+        <p class="text-gray-600 mb-4 text-center">Establece los saldos iniciales para comenzar tu aventura de ahorro.</p>
         <form @submit.prevent="guardarConfig" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tu saldo inicial</label>
-            <input v-model="configForm.miSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border rounded-lg" required>
+            <input v-model="configForm.miSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Saldo inicial de tu pareja</label>
-            <input v-model="configForm.parejaSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border rounded-lg" required>
+            <input v-model="configForm.parejaSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Fondo común inicial</label>
-            <input v-model="configForm.fondoComunInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border rounded-lg" required>
+            <input v-model="configForm.fondoComunInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
           </div>
-          <button type="submit" class="w-full bg-green-500 text-white p-3 rounded-lg hover:bg-green-600">
+          <button type="submit" class="w-full bg-green-500 text-white p-3 rounded-lg hover:bg-green-600 transition-colors duration-200">
             Guardar Configuración
           </button>
         </form>
@@ -721,7 +721,7 @@ const aportarMeta = async (meta) => {
       <!-- HEADER -->
       <header class="flex justify-between items-center mb-6">
         <div>
-          <h1 class="text-3xl font-bold text-gray-800">Finanzas de Pareja</h1>
+          <h1 class="text-3xl font-extrabold text-blue-600">Ahorro de tragonsite y gordita</h1>
           <p class="text-sm text-gray-600 mt-1">
             {{ miPerfil?.conectado ? '✅ Conectado(' + parejaPerfil?.nombre + ')' : '❌ Sin conectar' }}
           </p>
@@ -730,18 +730,18 @@ const aportarMeta = async (meta) => {
           <button 
             v-if="!miPerfil?.conectado"
             @click="showConexionModal = true"
-            class="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+            class="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors duration-200"
           >
             <Edit class="w-4 h-4" />Conectar Pareja
           </button>
           <button 
             v-else
             @click="desconectarPareja"
-            class="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600"
+            class="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors duration-200"
           >
             <X class="w-4 h-4" />Desconectar
           </button>
-          <button @click="logout" class="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">
+          <button @click="logout" class="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors duration-200">
             <LogOut class="w-4 h-4" />
             Salir
           </button>
@@ -831,9 +831,9 @@ const aportarMeta = async (meta) => {
                 </div>
               </div>
               <div>
-                <h3 class="text-lg font-semibold mb-4">Deudas Activas</h3>
+                <h3 class="text-lg font-semibold mb-4 text-gray-700">Deudas Activas</h3>
                 <div class="space-y-3">
-                  <div v-for="d in deudas.slice(0, 3)" :key="d.id" class="p-3 bg-gray-50 rounded-lg">
+                  <div v-for="d in deudas.slice(0, 3)" :key="d.id" class="p-3 bg-red-50 rounded-lg shadow-sm">
                     <div class="flex justify-between items-start mb-2"><p class="font-medium">{{ d.descripcion }}</p><p class="text-sm text-gray-600">{{ pctDeuda(d) }}%</p></div>
                     <div class="w-full bg-gray-200 rounded-full h-2 mb-2"><div class="h-2 rounded-full bg-red-500" :style="{ width: pctDeuda(d) + '%' }"></div></div>
                     <p class="text-sm text-gray-600">Falta: {{ fmt(d.monto - (d.monto_pagado || 0)) }}</p>
@@ -846,10 +846,10 @@ const aportarMeta = async (meta) => {
           <!-- GASTOS -->
           <div v-if="activeTab === 'Movimientos'">
             <div class="flex justify-between items-center mb-4">
-              <h2 class="text-xl font-semibold">Historial</h2>
-              <button @click="openModal('gasto')" class="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">
+              <h2 class="text-xl font-semibold text-gray-700">Historial de Movimientos</h2>
+              <button @click="openModal('gasto')" class="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors duration-200">
                 <Plus class="w-4 h-4" />
-                Nuevo Gasto
+                Nuevo Movimiento
               </button>
             </div>
 
@@ -860,8 +860,8 @@ const aportarMeta = async (meta) => {
                 :key="f"
                 @click="filt = f"
                 :class="[
-                  'px-3 py-1 rounded-full text-sm font-medium',
-                  filt === f ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  'px-3 py-1 rounded-full text-sm font-medium transition-colors duration-200',
+                  filt === f ? 'bg-blue-500 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 ]"
               >
                 {{ f === 'all' ? 'Todos' : tLbl(f) }}
@@ -870,11 +870,11 @@ const aportarMeta = async (meta) => {
 
             <!-- LISTA DE GASTOS -->
             <div class="space-y-3">
-              <div v-for="txn in filtTxns" :key="txn.id" class="flex justify-between items-center p-4 border rounded-lg hover:bg-gray-50">
+              <div v-for="txn in filtTxns" :key="txn.id" class="flex justify-between items-center p-4 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150">
                 <div class="flex items-center gap-3">
                   <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" :class="txn.es_ingreso ? 'text-emerald-500' : 'text-red-500'" class="w-5 h-5"/>
                     <div>
-                      <p class="font-medium">{{ txn.descripcion }}</p>
+                      <p class="font-medium text-gray-800">{{ txn.descripcion }}</p>
                       <p class="text-sm text-gray-600">
                         {{ formatDate(txn.creado_en) }} • {{ txn.categoria }} • <span class="font-medium">{{ getQuienHizoGasto(txn) }}</span>
                         <span v-if="txn.metodo_pago" class="flex items-center gap-1 ml-2">
@@ -890,7 +890,7 @@ const aportarMeta = async (meta) => {
                     </p>
                     <p class="text-xs text-gray-500">{{ tLbl(getRelativeType(txn)) }}</p>
                   </div>
-                  <button v-if="txn.perfil_id === miPerfil?.id" @click="deleteTxn(txn.id)" class="text-red-500 hover:text-red-700">
+                  <button v-if="txn.perfil_id === miPerfil?.id" @click="deleteTxn(txn.id)" class="text-red-500 hover:text-red-700 transition-colors duration-150">
                     <Trash2 class="w-4 h-4" />
                   </button>
                 </div>
@@ -901,20 +901,20 @@ const aportarMeta = async (meta) => {
           <!-- METAS -->
           <div v-if="activeTab === 'Metas'">
             <div class="flex justify-between items-center mb-4">
-              <h2 class="text-xl font-semibold">Metas Financieras</h2>
-              <button @click="openModal('meta')" class="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
+              <h2 class="text-xl font-semibold text-gray-700">Metas de Ahorro</h2>
+              <button @click="openModal('meta')" class="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors duration-200">
                 <Target class="w-4 h-4" />
                 Nueva Meta
               </button>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div v-for="goal in goals" :key="goal.id" class="p-4 border rounded-lg">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> 
+              <div v-for="goal in goals" :key="goal.id" class="p-4 border border-gray-200 rounded-lg shadow-sm bg-white">
                 <div class="flex justify-between items-start mb-3">
-                  <h3 class="font-semibold">{{ goal.nombre }}</h3>
+                  <h3 class="font-semibold text-gray-800">{{ goal.nombre }}</h3>
                   <div class="flex items-center gap-2">
                     <span class="text-sm text-gray-600">{{ pct(goal) }}%</span>
-                    <button v-if="goal.perfil_id === miPerfil?.id" @click="deleteMeta(goal.id)" class="text-red-500 hover:text-red-700"> 
+                    <button v-if="goal.perfil_id === miPerfil?.id" @click="deleteMeta(goal.id)" class="text-red-500 hover:text-red-700 transition-colors duration-150"> 
                       <Trash2 class="w-4 h-4" />
                     </button>
                   </div>
@@ -934,12 +934,12 @@ const aportarMeta = async (meta) => {
                     {{ goal.es_compartida ? 'Compartida' : 'Individual' }}
                     <span v-if="goal.fecha_limite">• Vence: {{ formatDate(goal.fecha_limite) }}</span>
                   </span> 
-                  <div class="flex items-center gap-2">
-                    <input type="number" v-model="metaInputs[goal.id]" placeholder="Monto" class="w-20 p-1 text-sm border rounded" step="0.01">
+                  <div class="flex items-center gap-2 border-t border-gray-100 pt-3 mt-3">
+                    <input type="number" v-model="metaInputs[goal.id]" placeholder="Monto" class="w-20 p-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" step="0.01">
                     <button
                       @click="aportarMeta(goal)"
                       :disabled="pct(goal) >= 100 || saving"
-                      class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50"
+                      class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50 transition-colors duration-200"
                     >
                       Aportar
                     </button>
@@ -952,19 +952,19 @@ const aportarMeta = async (meta) => {
           <!-- DEUDAS -->
           <div v-if="activeTab === 'Deudas'">
             <div class="flex justify-between items-center mb-4">
-              <h2 class="text-xl font-semibold">Deudas</h2>
-              <button @click="openModal('deuda')" class="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">
+              <h2 class="text-xl font-semibold text-gray-700">Mis Deudas</h2>
+              <button @click="openModal('deuda')" class="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors duration-200">
                 <Plus class="w-4 h-4" />
                 Nueva Deuda
               </button>
             </div>
 
-            <div class="mb-4 p-4 bg-red-50 rounded-lg">
+            <div class="mb-4 p-4 bg-red-50 rounded-lg border border-red-200 shadow-sm">
               <p class="text-red-800 font-medium">Deuda restante por pagar: {{ fmt(totalDeudas) }}</p>
             </div>
 
-            <div class="space-y-4">
-              <div v-for="deuda in deudas" :key="deuda.id" class="p-4 border rounded-lg bg-white shadow-sm">
+            <div class="space-y-4"> 
+              <div v-for="deuda in deudas" :key="deuda.id" class="p-4 border border-gray-200 rounded-lg shadow-sm bg-white">
                 <div class="flex justify-between items-start mb-2">
                   <div>
                   <p class="font-medium">{{ deuda.descripcion }}</p>
@@ -973,7 +973,7 @@ const aportarMeta = async (meta) => {
                     <span v-if="deuda.fecha_vencimiento">• Vence: {{ formatDate(deuda.fecha_vencimiento) }}</span>
                   </p>
                 </div>
-                <button v-if="deuda.perfil_id === miPerfil?.id" @click="deleteDeuda(deuda.id)" class="text-red-500 hover:text-red-700">
+                <button v-if="deuda.perfil_id === miPerfil?.id" @click="deleteDeuda(deuda.id)" class="text-red-500 hover:text-red-700 transition-colors duration-150">
                   <Trash2 class="w-4 h-4" />
                 </button>
                 </div>
@@ -983,11 +983,11 @@ const aportarMeta = async (meta) => {
                 <div class="flex justify-between text-xs text-gray-600 mb-3">
                   <span>Pagado: {{ fmt(deuda.monto_pagado || 0) }} ({{ pctDeuda(deuda) }}%)</span>
                   <span class="font-semibold text-red-600">Falta: {{ fmt(deuda.monto - (deuda.monto_pagado || 0)) }}</span>
-                </div>
-                <div class="flex items-center justify-end gap-2 border-t pt-3">
+                </div> 
+                <div class="flex items-center justify-end gap-2 border-t border-gray-100 pt-3 mt-3">
                   <span class="text-sm text-gray-600">Abonar: S/</span>
-                  <input type="number" v-model="deudaInputs[deuda.id]" placeholder="Ej. 100" class="w-20 p-1 text-sm border rounded" step="0.01">
-                  <button @click="abonarDeuda(deuda)" :disabled="pctDeuda(deuda) >= 100 || saving" class="px-4 py-1.5 bg-red-500 text-white text-xs rounded-md hover:bg-red-600 disabled:opacity-50">Pagar</button>
+                  <input type="number" v-model="deudaInputs[deuda.id]" placeholder="Ej. 100" class="w-20 p-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" step="0.01">
+                  <button @click="abonarDeuda(deuda)" :disabled="pctDeuda(deuda) >= 100 || saving" class="px-4 py-1.5 bg-red-500 text-white text-xs rounded-md hover:bg-red-600 disabled:opacity-50 transition-colors duration-200">Pagar</button>
                 </div>
               </div>
             </div>
@@ -998,11 +998,11 @@ const aportarMeta = async (meta) => {
 
     <!-- MODALES -->
     <!-- MODAL CONEXIÓN DE PAREJAS -->
-    <div v-if="showConexionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-lg p-6 w-full max-w-md">
+    <div v-if="showConexionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"> 
+      <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Conectar con tu Pareja</h3>
-          <button @click="showConexionModal = false" class="text-gray-500 hover:text-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800">Conectar con tu Pareja</h3>
+          <button @click="showConexionModal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
             <X class="w-5 h-5" />
           </button>
         </div>
@@ -1062,40 +1062,40 @@ const aportarMeta = async (meta) => {
 
     <!-- MODAL GASTO -->
     <div v-if="modal === 'gasto'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-lg p-6 w-full max-w-md">
+      <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Nuevo Gasto</h3>
-          <button @click="modal = false" class="text-gray-500 hover:text-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800">Nuevo Movimiento</h3>
+          <button @click="modal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
             <X class="w-5 h-5" />
           </button>
         </div>
  
         <form @submit.prevent="save" class="space-y-4">
-          <div class="flex bg-gray-100 p-1 rounded-lg">
-            <button type="button" @click="form.es_ingreso = false" :class="['flex-1 py-1.5 text-sm font-medium rounded-md', !form.es_ingreso ? 'bg-white shadow text-red-600' : 'text-gray-500']">Egresos / Gastos</button>
-            <button type="button" @click="form.es_ingreso = true" :class="['flex-1 py-1.5 text-sm font-medium rounded-md', form.es_ingreso ? 'bg-white shadow text-emerald-600' : 'text-gray-500']">Ingresos / Sueldo</button>
+          <div class="flex bg-gray-100 p-1 rounded-lg shadow-sm">
+            <button type="button" @click="form.es_ingreso = false" :class="['flex-1 py-1.5 text-sm font-medium rounded-md transition-colors duration-200', !form.es_ingreso ? 'bg-white shadow text-red-600' : 'text-gray-500 hover:text-gray-700']">Egresos / Gastos</button>
+            <button type="button" @click="form.es_ingreso = true" :class="['flex-1 py-1.5 text-sm font-medium rounded-md transition-colors duration-200', form.es_ingreso ? 'bg-white shadow text-emerald-600' : 'text-gray-500 hover:text-gray-700']">Ingresos / Sueldo</button>
           </div>
           
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-            <input v-model="form.desc" type="text" class="w-full p-3 border rounded-lg" required>
+            <input v-model="form.desc" type="text" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
           </div>
  
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-            <input v-model="form.amount" type="number" step="0.01" class="w-full p-3 border rounded-lg" required>
+            <input v-model="form.amount" type="number" step="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
           </div>
  
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-            <select v-model="form.cat" class="w-full p-3 border rounded-lg">
+            <select v-model="form.cat" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
               <option v-for="cat in CATS" :key="cat" :value="cat">{{ cat }}</option>
             </select>
           </div>
  
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-            <select v-model="form.type" class="w-full p-3 border rounded-lg">
+            <select v-model="form.type" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
               <option value="individual_mio">Mío</option>
               <option value="individual_tuyo">De mi pareja</option>
               <option value="compartido">Compartido</option>
@@ -1104,22 +1104,22 @@ const aportarMeta = async (meta) => {
  
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Método de pago</label>
-            <select v-model="form.metodoPago" class="w-full p-3 border rounded-lg">
+            <select v-model="form.metodoPago" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
               <option v-for="metodo in METODOS_PAGO" :key="metodo.id" :value="metodo.id">
                 {{ metodo.label }}
               </option>
             </select>
           </div>
  
-          <div v-if="form.type === 'compartido' && !form.es_ingreso" class="flex items-center">
-            <input v-model="form.split" type="checkbox" class="mr-2">
+          <div v-if="form.type === 'compartido' && !form.es_ingreso" class="flex items-center"> 
+            <input v-model="form.split" type="checkbox" class="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
             <label class="text-sm text-gray-700">Dividir 50/50</label>
           </div>
  
-          <p v-if="formError" class="text-red-600 text-sm">{{ formError }}</p>
+          <p v-if="formError" class="text-red-600 text-sm bg-red-50 p-3 rounded border border-red-200">{{ formError }}</p>
  
-          <button type="submit" :disabled="saving" class="w-full bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:opacity-50">
-            {{ saving ? 'Guardando...' : 'Guardar Gasto' }}
+          <button type="submit" :disabled="saving" class="w-full bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors duration-200">
+            {{ saving ? 'Guardando...' : 'Guardar Movimiento' }}
           </button>
         </form>
       </div>
@@ -1127,10 +1127,10 @@ const aportarMeta = async (meta) => {
 
     <!-- MODAL META -->
     <div v-if="modal === 'meta'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-lg p-6 w-full max-w-md">
+      <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Nueva Meta</h3>
-          <button @click="modal = false" class="text-gray-500 hover:text-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800">Nueva Meta de Ahorro</h3>
+          <button @click="modal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
             <X class="w-5 h-5" />
           </button>
         </div>
@@ -1138,25 +1138,25 @@ const aportarMeta = async (meta) => {
         <form @submit.prevent="saveMeta" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Nombre de la meta</label>
-            <input v-model="metaForm.nombre" type="text" class="w-full p-3 border rounded-lg" required>
+            <input v-model="metaForm.nombre" type="text" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" required>
           </div>
  
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Monto objetivo</label>
-            <input v-model="metaForm.montoMeta" type="number" step="0.01" class="w-full p-3 border rounded-lg" required>
+            <input v-model="metaForm.montoMeta" type="number" step="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" required>
           </div>
  
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Fecha límite (opcional)</label>
-            <input v-model="metaForm.fechaLimite" type="date" class="w-full p-3 border rounded-lg">
+            <input v-model="metaForm.fechaLimite" type="date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500">
           </div>
 
-          <div class="flex items-center">
-            <input v-model="metaForm.esCompartida" type="checkbox" class="mr-2">
+          <div class="flex items-center"> 
+            <input v-model="metaForm.esCompartida" type="checkbox" class="mr-2 h-4 w-4 text-green-600 border-gray-300 rounded focus:ring-green-500">
             <label class="text-sm text-gray-700">Meta compartida</label>
           </div> 
 
-          <button type="submit" :disabled="saving" class="w-full bg-green-500 text-white p-3 rounded-lg hover:bg-green-600 disabled:opacity-50">
+          <button type="submit" :disabled="saving" class="w-full bg-green-500 text-white p-3 rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors duration-200">
             {{ saving ? 'Guardando...' : 'Crear Meta' }}
           </button>
         </form>
@@ -1165,10 +1165,10 @@ const aportarMeta = async (meta) => {
 
     <!-- MODAL DEUDA -->
     <div v-if="modal === 'deuda'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-lg p-6 w-full max-w-md">
+      <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold">Nueva Deuda</h3>
-          <button @click="modal = false" class="text-gray-500 hover:text-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800">Nueva Deuda</h3>
+          <button @click="modal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
             <X class="w-5 h-5" />
           </button>
         </div>
@@ -1176,20 +1176,20 @@ const aportarMeta = async (meta) => {
         <form @submit.prevent="saveDeuda" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-            <input v-model="deudaForm.descripcion" type="text" class="w-full p-3 border rounded-lg" required>
+            <input v-model="deudaForm.descripcion" type="text" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500" required>
           </div>
  
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-            <input v-model="deudaForm.monto" type="number" step="0.01" class="w-full p-3 border rounded-lg" required>
+            <input v-model="deudaForm.monto" type="number" step="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500" required>
           </div>
  
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Fecha de vencimiento (opcional)</label>
-            <input v-model="deudaForm.fechaVencimiento" type="date" class="w-full p-3 border rounded-lg">
+            <input v-model="deudaForm.fechaVencimiento" type="date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500">
           </div>
 
-          <button type="submit" :disabled="saving" class="w-full bg-red-500 text-white p-3 rounded-lg hover:bg-red-600 disabled:opacity-50">
+          <button type="submit" :disabled="saving" class="w-full bg-red-500 text-white p-3 rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors duration-200">
             {{ saving ? 'Guardando...' : 'Registrar Deuda' }}
           </button>
         </form>
