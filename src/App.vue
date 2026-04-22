@@ -1,7 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { Plus, X, Layers, LogIn, LogOut, Edit, Trash2, Target, CreditCard, DollarSign, Smartphone, ArrowDownCircle, ArrowUpCircle } from 'lucide-vue-next'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { Plus, X, LogIn, LogOut, Edit, Trash2, Target, CreditCard, DollarSign, Smartphone, ArrowDownCircle, ArrowUpCircle } from 'lucide-vue-next'
+import { Chart, DoughnutController, ArcElement, Tooltip, Legend } from 'chart.js'
 import { supabase } from './supabase'
+
+Chart.register(DoughnutController, ArcElement, Tooltip, Legend)
 
 // ==========================================
 // ESTADO DE AUTENTICACIÓN Y USUARIO
@@ -14,14 +17,10 @@ const miPerfil = ref(null)
 const parejaPerfil = ref(null)
 
 // ==========================================
-// CONFIGURACIÓN INICIAL (NUEVO)
+// CONFIGURACIÓN INICIAL
 // ==========================================
 const showConfig = ref(false)
-const configForm = ref({
-  miSaldoInicial: '',
-  parejaSaldoInicial: '',
-  fondoComunInicial: ''
-})
+const configForm = ref({ miSaldoInicial: '', parejaSaldoInicial: '', fondoComunInicial: '' })
 
 // ==========================================
 // CONEXIÓN DE PAREJAS
@@ -40,35 +39,15 @@ const filt = ref('all')
 const formError = ref('')
 const saving = ref(false)
 const loading = ref(false)
-
-// Inputs dinámicos para montos de Metas y Deudas
 const metaInputs = ref({})
 const deudaInputs = ref({})
 
 // ==========================================
 // FORMULARIOS
 // ==========================================
-const form = ref({
-  desc: '',
-  amount: '',
-  cat: 'Otros',
-  type: 'individual_mio',
-  split: false,
-  metodoPago: 'efectivo'
-})
-
-const metaForm = ref({
-  nombre: '',
-  montoMeta: '',
-  esCompartida: true,
-  fechaLimite: ''
-})
-
-const deudaForm = ref({
-  descripcion: '',
-  monto: '',
-  fechaVencimiento: ''
-})
+const form = ref({ desc: '', amount: '', cat: 'Otros', type: 'individual_mio', split: false, metodoPago: 'efectivo', es_ingreso: false })
+const metaForm = ref({ nombre: '', montoMeta: '', esCompartida: true, fechaLimite: '' })
+const deudaForm = ref({ descripcion: '', monto: '', fechaVencimiento: '' })
 
 const CATS = ['Alimentación','Transporte','Entretenimiento','Salud','Hogar','Ingreso/Sueldo','Otros']
 const METODOS_PAGO = [
@@ -80,19 +59,18 @@ const METODOS_PAGO = [
 ]
 
 // ==========================================
-// DATOS DE SUPABASE
+// DATOS
 // ==========================================
 const txns = ref([])
 const goals = ref([])
 const deudas = ref([])
+const donutCanvas = ref(null)
+let donutChart = null
 
 const myBalAnimating = ref(false)
 const pBalAnimating = ref(false)
 const sBalAnimating = ref(false)
-
-let myBalTimer = null
-let pBalTimer = null
-let sBalTimer = null
+let myBalTimer = null, pBalTimer = null, sBalTimer = null
 
 // ==========================================
 // AUTENTICACIÓN
@@ -110,81 +88,40 @@ onMounted(() => {
 
 const login = async () => {
   authLoading.value = true
-  const { error } = await supabase.auth.signInWithPassword({
-    email: email.value,
-    password: password.value
-  })
-  if (error) alert("Error: " + error.message)
+  const { error } = await supabase.auth.signInWithPassword({ email: email.value, password: password.value })
+  if (error) alert('Error: ' + error.message)
   authLoading.value = false
 }
 
 const logout = async () => {
   await supabase.auth.signOut()
   session.value = null
-  txns.value = []
-  goals.value = []
-  deudas.value = []
+  txns.value = []; goals.value = []; deudas.value = []
 }
 
 // ==========================================
-// INICIALIZACIÓN DE LA APP
+// INICIALIZACIÓN
 // ==========================================
 const iniciarApp = async () => {
   loading.value = true
   try {
     const { data: { user } } = await supabase.auth.getUser()
-
-    // 1. Obtener/Crear perfil propio
-    let { data: perfil } = await supabase
-      .from('perfiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-
+    let { data: perfil } = await supabase.from('perfiles').select('*').eq('user_id', user.id).single()
     if (!perfil) {
-      // Generar código único para la nueva pareja
-      const codigoPareja = generarCodigoPareja()
-      const { data: newPerfil } = await supabase
-        .from('perfiles')
-        .insert([{ 
-          user_id: user.id, 
-          nombre: user.email.split('@')[0],
-          codigo_pareja: codigoPareja
-        }])
-        .select()
-        .single()
+      const { data: newPerfil } = await supabase.from('perfiles')
+        .insert([{ user_id: user.id, nombre: user.email.split('@')[0], codigo_pareja: generarCodigoPareja() }])
+        .select().single()
       perfil = newPerfil
     }
-    
     miPerfil.value = perfil
-
-    // 2. Obtener perfil de la pareja si está conectada
     if (perfil.pareja_id_conectada) {
-      const { data: pareja } = await supabase
-        .from('perfiles')
-        .select('*')
-        .eq('id', perfil.pareja_id_conectada)
-        .single()
+      const { data: pareja } = await supabase.from('perfiles').select('*').eq('id', perfil.pareja_id_conectada).single()
       parejaPerfil.value = pareja
     }
-
-    // 3. Verificar si necesita configuración inicial
-    // Ahora solo mostramos la pantalla si el valor es estrictamente 'null' (nulo),
-    // permitiendo que el número 0 sea un saldo perfectamente válido.
-    if (perfil.saldo_inicial_mio === null) {
-      showConfig.value = true
-    }
-
-    // 4. Cargar datos
-    await Promise.all([
-      cargarGastos(),
-      cargarMetas(),
-      cargarDeudas()
-    ])
-
+    if (perfil.saldo_inicial_mio === null) showConfig.value = true
+    await Promise.all([cargarGastos(), cargarMetas(), cargarDeudas()])
   } catch (error) {
     console.error('Error inicializando app:', error)
-    alert('Error al cargar la aplicación')
   }
   loading.value = false
 }
@@ -193,80 +130,47 @@ const iniciarApp = async () => {
 // CONFIGURACIÓN INICIAL
 // ==========================================
 const guardarConfig = async () => {
-  // Ahora verificamos estrictamente que no sea una cadena de texto vacía, permitiendo el número 0
   if (configForm.value.miSaldoInicial === '' || configForm.value.parejaSaldoInicial === '' || configForm.value.fondoComunInicial === '') {
     return alert('Por favor completa todos los campos')
   }
-
-  const { error } = await supabase
-    .from('perfiles')
-    .update({
-      saldo_inicial_mio: parseFloat(configForm.value.miSaldoInicial || 0),
-      saldo_inicial_pareja: parseFloat(configForm.value.parejaSaldoInicial || 0),
-      fondo_comun_inicial: parseFloat(configForm.value.fondoComunInicial || 0)
-    })
-    .eq('id', miPerfil.value.id)
-
-  if (error) {
-    alert("Error al guardar: " + error.message)
-  } else {
-    showConfig.value = false
-    miPerfil.value = {
-      ...miPerfil.value,
-      saldo_inicial_mio: parseFloat(configForm.value.miSaldoInicial || 0),
-      fondo_comun_inicial: parseFloat(configForm.value.fondoComunInicial || 0)
-    }
+  const { error } = await supabase.from('perfiles').update({
+    saldo_inicial_mio: parseFloat(configForm.value.miSaldoInicial || 0),
+    saldo_inicial_pareja: parseFloat(configForm.value.parejaSaldoInicial || 0),
+    fondo_comun_inicial: parseFloat(configForm.value.fondoComunInicial || 0)
+  }).eq('id', miPerfil.value.id)
+  if (error) { alert('Error al guardar: ' + error.message); return }
+  showConfig.value = false
+  miPerfil.value = {
+    ...miPerfil.value,
+    saldo_inicial_mio: parseFloat(configForm.value.miSaldoInicial || 0),
+    fondo_comun_inicial: parseFloat(configForm.value.fondoComunInicial || 0)
   }
 }
 
 // ==========================================
 // CARGA DE DATOS
 // ==========================================
+const getPerfilIds = () => {
+  const ids = [miPerfil.value.id]
+  if (parejaPerfil.value) ids.push(parejaPerfil.value.id)
+  return ids
+}
+
 const cargarGastos = async () => {
-  // Obtener IDs de perfiles a incluir (propio + pareja)
-  const perfilIds = [miPerfil.value.id]
-  if (parejaPerfil.value) {
-    perfilIds.push(parejaPerfil.value.id)
-  }
-
-  const { data, error } = await supabase
-    .from('transacciones')
-    .select('*')
-    .in('perfil_id', perfilIds)
-    .order('creado_en', { ascending: false })
-
+  const { data } = await supabase.from('transacciones').select('*')
+    .in('perfil_id', getPerfilIds()).order('creado_en', { ascending: false })
   if (data) txns.value = data
 }
 
 const cargarMetas = async () => {
-  // Obtener IDs de perfiles a incluir (propio + pareja)
-  const perfilIds = [miPerfil.value.id]
-  if (parejaPerfil.value) {
-    perfilIds.push(parejaPerfil.value.id)
-  }
-
-  const { data, error } = await supabase
-    .from('metas')
-    .select('*')
-    .in('perfil_id', perfilIds)
-    .order('creado_en', { ascending: false })
-
+  const { data } = await supabase.from('metas').select('*')
+    .in('perfil_id', getPerfilIds()).order('creado_en', { ascending: false })
   if (data) goals.value = data
 }
 
 const cargarDeudas = async () => {
-  // Obtener IDs de perfiles a incluir (propio + pareja)
-  const perfilIds = [miPerfil.value.id]
-  if (parejaPerfil.value) {
-    perfilIds.push(parejaPerfil.value.id)
-  }
-
-  const { data, error } = await supabase
-    .from('deudas')
-    .select('*')
-    .in('perfil_id', perfilIds)
-    .order('fecha_vencimiento', { ascending: true })
-
+  const { data } = await supabase.from('deudas').select('*')
+    .in('perfil_id', getPerfilIds()).order('fecha_vencimiento', { ascending: true })
   if (data) deudas.value = data
 }
 
@@ -276,73 +180,105 @@ const cargarDeudas = async () => {
 const myBal = computed(() => {
   let bal = miPerfil.value?.saldo_inicial_mio || 0
   txns.value.filter(t => t.perfil_id === miPerfil.value?.id && t.tipo === 'individual_mio').forEach(t => {
-    if (t.es_ingreso) bal += Number(t.monto)
-    else bal -= Number(t.monto)
+    bal += t.es_ingreso ? Number(t.monto) : -Number(t.monto)
   })
   return bal
 })
 
 const pBal = computed(() => {
-  // Si hay pareja conectada, usa su saldo inicial. Si no, usa el saldo inicial de la pareja configurado por el usuario actual.
   let bal = parejaPerfil.value ? parejaPerfil.value.saldo_inicial_mio : (miPerfil.value?.saldo_inicial_pareja || 0)
-  
-  txns.value.filter(t => {
-    // Gastos/Ingresos individuales de la pareja (registrados por la pareja)
-    if (parejaPerfil.value && t.perfil_id === parejaPerfil.value.id && t.tipo === 'individual_mio') {
-      return true
-    }
-    // Gastos/Ingresos marcados como "individual_tuyo" por el usuario actual (registrados por el usuario actual)
-    if (t.perfil_id === miPerfil.value?.id && t.tipo === 'individual_tuyo') {
-      return true
-    }
-    return false
-  }).forEach(t => {
-    if (t.es_ingreso) bal += Number(t.monto)
-    else bal -= Number(t.monto)
-  })
+  txns.value.filter(t =>
+    (parejaPerfil.value && t.perfil_id === parejaPerfil.value.id && t.tipo === 'individual_mio') ||
+    (t.perfil_id === miPerfil.value?.id && t.tipo === 'individual_tuyo')
+  ).forEach(t => { bal += t.es_ingreso ? Number(t.monto) : -Number(t.monto) })
   return bal
 })
 
 const sBal = computed(() => {
-  // Sumamos los fondos iniciales de ambos para que siempre cuadre exacto
   let bal = (miPerfil.value?.fondo_comun_inicial || 0) + (parejaPerfil.value?.fondo_comun_inicial || 0)
   txns.value.filter(t => t.tipo === 'compartido').forEach(t => {
-    const montoReal = Number(t.monto) / (t.dividir_50 ? 2 : 1)
-    if (t.es_ingreso) bal += montoReal
-    else bal -= montoReal
+    const m = Number(t.monto) / (t.dividir_50 ? 2 : 1)
+    bal += t.es_ingreso ? m : -m
   })
   return bal
 })
 
-watch(myBal, () => {
-  myBalAnimating.value = true
-  clearTimeout(myBalTimer)
-  myBalTimer = setTimeout(() => { myBalAnimating.value = false }, 500)
-})
-
-watch(pBal, () => {
-  pBalAnimating.value = true
-  clearTimeout(pBalTimer)
-  pBalTimer = setTimeout(() => { pBalAnimating.value = false }, 500)
-})
-
-watch(sBal, () => {
-  sBalAnimating.value = true
-  clearTimeout(sBalTimer)
-  sBalTimer = setTimeout(() => { sBalAnimating.value = false }, 500)
-})
-
 const filtTxns = computed(() => {
   if (filt.value === 'all') return txns.value
-  // AQUI ESTÁ LA MAGIA: Le decimos al filtro que use nuestra función traductora
-  // en lugar de leer la base de datos de forma cruda.
   return txns.value.filter(t => getRelativeType(t) === filt.value)
 })
 
-const totalSpent = computed(() => txns.value.filter(t => !t.es_ingreso).reduce((s, t) => s + Number(t.monto), 0).toFixed(2))
-// Ahora el total de deudas resta lo que ya se pagó
-const totalDeudas = computed(() => deudas.value.reduce((s, d) => s + (Number(d.monto) - Number(d.monto_pagado || 0)), 0).toFixed(2))
+// FIX: retorna número, no string
+const totalSpent = computed(() => txns.value.filter(t => !t.es_ingreso).reduce((s, t) => s + Number(t.monto), 0))
+const totalDeudas = computed(() => deudas.value.reduce((s, d) => s + (Number(d.monto) - Number(d.monto_pagado || 0)), 0))
 
+const donutCategories = computed(() => {
+  const map = {}
+  txns.value.filter(t => !t.es_ingreso).forEach(t => {
+    map[t.categoria] = (map[t.categoria] || 0) + Number(t.monto)
+  })
+  return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount)
+})
+
+// FIX: hora reactiva — se actualiza cada minuto, no se congela al cargar
+const horaActual = ref(new Date().getHours())
+setInterval(() => { horaActual.value = new Date().getHours() }, 60000)
+
+const saludo = computed(() => {
+  const h = horaActual.value
+  return h < 12 ? 'Buenos días' : h < 18 ? 'Buenas tardes' : 'Buenas noches'
+})
+
+const greetingEmoji = computed(() => {
+  const h = horaActual.value
+  return h < 12 ? '🌅' : h < 18 ? '☀️' : '🌙'
+})
+
+// Banner dinámico con insight real
+const insightBanner = computed(() => {
+  const gastos = txns.value.filter(t => !t.es_ingreso)
+  if (txns.value.length === 0) return 'Sin movimientos aún → registra el primero ↗'
+  if (gastos.length === 0) return 'Solo ingresos registrados → ver historial ↗'
+  const topCat = gastos.reduce((acc, t) => { acc[t.categoria] = (acc[t.categoria] || 0) + Number(t.monto); return acc }, {})
+  const [cat, monto] = Object.entries(topCat).sort((a, b) => b[1] - a[1])[0]
+  return `${gastos.length} gastos · más en ${cat} (${fmt(monto)}) → ver historial ↗`
+})
+
+// ==========================================
+// DONUT CHART
+// ==========================================
+const renderDonut = () => {
+  if (!donutCanvas.value) return
+  const labels = donutCategories.value.map(i => i.category)
+  const data = donutCategories.value.map(i => i.amount)
+  const colors = ['#f97316','#3b82f6','#8b5cf6','#ec4899','#eab308','#059669','#6b7280'].slice(0, labels.length)
+  if (!labels.length) { labels.push('Sin gastos'); data.push(1); colors.push('#e5e7eb') }
+  if (donutChart) { donutChart.destroy(); donutChart = null }
+  donutChart = new Chart(donutCanvas.value, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 2, borderColor: 'transparent' }] },
+    options: {
+      cutout: '72%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${ctx.label}: S/ ${(ctx.parsed || 0).toFixed(2)}` } }
+      },
+      responsive: true, maintainAspectRatio: false
+    }
+  })
+}
+
+// FIX: también vigila `loading` para renderizar cuando termina de cargar
+watch([txns, activeTab, loading], async ([, tab, isLoading]) => {
+  if (tab === 'Resumen' && !isLoading) {
+    await nextTick()
+    renderDonut()
+  }
+}, { immediate: true })
+
+watch(myBal, () => { myBalAnimating.value = true; clearTimeout(myBalTimer); myBalTimer = setTimeout(() => { myBalAnimating.value = false }, 500) })
+watch(pBal, () => { pBalAnimating.value = true; clearTimeout(pBalTimer); pBalTimer = setTimeout(() => { pBalAnimating.value = false }, 500) })
+watch(sBal, () => { sBalAnimating.value = true; clearTimeout(sBalTimer); sBalTimer = setTimeout(() => { sBalAnimating.value = false }, 500) })
 
 // ==========================================
 // UTILIDADES
@@ -350,748 +286,645 @@ const totalDeudas = computed(() => deudas.value.reduce((s, d) => s + (Number(d.m
 const fmt = n => 'S/ ' + Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const formatDate = (dateStr) => {
   const d = new Date(dateStr)
-  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
-  return `${d.getDate()} ${meses[d.getMonth()]}`
+  return `${d.getDate()} ${['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()]}`
 }
 const pctDeuda = d => Math.min(100, Math.round(((d.monto_pagado || 0) / d.monto) * 100))
 const pct = g => Math.min(100, Math.round(g.monto_actual / g.monto_meta * 100))
 
-// Función para obtener el nombre de quien hizo el gasto
-// Función para traducir si un gasto es "Mío" o de mi "Pareja" dependiendo de quién mire
+// FIX: iniciales inteligentes — "Diego Mendoza" → "DM", nombre simple → "DIE"
+const getInitials = (nombre) => {
+  if (!nombre) return '??'
+  const partes = nombre.trim().split(' ').filter(Boolean)
+  if (partes.length >= 2) return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+  return nombre.slice(0, 3).toUpperCase()
+}
+
 const getRelativeType = (t) => {
   if (t.tipo === 'compartido') return 'compartido'
-  
-  // Si el gasto lo registró el usuario actual
-  if (t.perfil_id === miPerfil.value?.id) { // Si el gasto lo registró el usuario actual
-    return t.tipo
-  }
-  
-  // Si el gasto lo registró la pareja
+  if (t.perfil_id === miPerfil.value?.id) return t.tipo
   if (parejaPerfil.value && t.perfil_id === parejaPerfil.value.id) {
-    // Invertimos la lógica: lo que fue "mío" para la pareja, es "tuyo" (pareja) para mí
     if (t.tipo === 'individual_mio') return 'individual_tuyo'
-    if (t.tipo === 'individual_tuyo') return 'individual_mio' // Esto no debería pasar si la pareja registra como "individual_mio"
+    if (t.tipo === 'individual_tuyo') return 'individual_mio'
   }
-  
   return t.tipo
 }
+
 const getQuienHizoGasto = (txn) => {
-  if (txn.perfil_id === miPerfil.value?.id) {
-    return 'Tú'
-  } else if (parejaPerfil.value && txn.perfil_id === parejaPerfil.value.id) {
-    return parejaPerfil.value.nombre || 'Pareja'
-  }
+  if (txn.perfil_id === miPerfil.value?.id) return 'Tú'
+  if (parejaPerfil.value && txn.perfil_id === parejaPerfil.value.id) return parejaPerfil.value.nombre || 'Pareja'
   return 'Desconocido'
 }
 
+// Mapa de colores por categoría
+const CC = {
+  'Alimentación':    { bg: 'bg-orange-100',  tx: 'text-orange-700' },
+  'Transporte':      { bg: 'bg-blue-100',    tx: 'text-blue-700' },
+  'Entretenimiento': { bg: 'bg-violet-100',  tx: 'text-violet-700' },
+  'Salud':           { bg: 'bg-rose-100',    tx: 'text-rose-700' },
+  'Hogar':           { bg: 'bg-yellow-100',  tx: 'text-yellow-700' },
+  'Ingreso/Sueldo':  { bg: 'bg-emerald-100', tx: 'text-emerald-700' },
+  'Otros':           { bg: 'bg-gray-100',    tx: 'text-gray-600' }
+}
 const TC = {
   individual_mio: { bg: 'bg-emerald-100', tx: 'text-emerald-700' },
-  individual_tuyo: { bg: 'bg-blue-100', tx: 'text-blue-700' },
-  compartido: { bg: 'bg-amber-100', tx: 'text-amber-700' }
+  individual_tuyo: { bg: 'bg-blue-100',   tx: 'text-blue-700' },
+  compartido:      { bg: 'bg-amber-100',  tx: 'text-amber-700' }
 }
-const GC = {
-  success: { bg: 'bg-emerald-100', tx: 'text-emerald-700' },
-  info: { bg: 'bg-blue-100', tx: 'text-blue-700' },
-  warning: { bg: 'bg-amber-100', tx: 'text-amber-700' }
-}
-
 const TL = { individual_mio: 'Mío', individual_tuyo: 'Pareja', compartido: 'Nuestro' }
 const cBg = c => (CC[c] || CC['Otros']).bg
 const cTx = c => (CC[c] || CC['Otros']).tx
 const tBg = t => (TC[t] || TC['individual_mio']).bg
 const tTx = t => (TC[t] || TC['individual_mio']).tx
 const tLbl = t => TL[t] || t
-const gBg = c => (GC[c] || GC['success']).bg
-const gTx = c => (GC[c] || GC['success']).tx
 
 // ==========================================
 // ACCIONES
 // ==========================================
 const openModal = (tipo = 'gasto') => {
-  if (tipo === 'gasto') { // Reiniciar formulario de gasto/ingreso
-    form.value = { desc: '', amount: '', cat: 'Otros', type: 'individual_mio', split: false, metodoPago: 'efectivo', es_ingreso: false }
-  } else if (tipo === 'meta') {
-    metaForm.value = { nombre: '', montoMeta: '', esCompartida: true, fechaLimite: '' }
-  } else if (tipo === 'deuda') {
-    deudaForm.value = { descripcion: '', monto: '', fechaVencimiento: '' }
-  }
+  if (tipo === 'gasto') form.value = { desc: '', amount: '', cat: 'Otros', type: 'individual_mio', split: false, metodoPago: 'efectivo', es_ingreso: false }
+  else if (tipo === 'meta') metaForm.value = { nombre: '', montoMeta: '', esCompartida: true, fechaLimite: '' }
+  else if (tipo === 'deuda') deudaForm.value = { descripcion: '', monto: '', fechaVencimiento: '' }
   formError.value = ''
   modal.value = tipo
 }
 
 const save = async () => {
   formError.value = ''
-  if (!form.value.desc.trim()) { formError.value = 'Ingresa descripción'; return }
+  if (!form.value.desc.trim()) { formError.value = 'Ingresa una descripción'; return }
   const amt = parseFloat(form.value.amount)
   if (isNaN(amt) || amt <= 0) { formError.value = 'Monto inválido'; return }
-
   saving.value = true
-  const { error } = await supabase.from('transacciones').insert({ // Insertar nueva transacción
-    descripcion: form.value.desc.trim(),
-    monto: amt,
-    categoria: form.value.cat,
-    tipo: form.value.type,
-    dividir_50: form.value.split,
-    es_ingreso: form.value.es_ingreso, // Nuevo campo
-    metodo_pago: form.value.metodoPago,
-    perfil_id: miPerfil.value.id
+  const { error } = await supabase.from('transacciones').insert({
+    descripcion: form.value.desc.trim(), monto: amt, categoria: form.value.cat,
+    tipo: form.value.type, dividir_50: form.value.split, es_ingreso: form.value.es_ingreso,
+    metodo_pago: form.value.metodoPago, perfil_id: miPerfil.value.id
   })
-
-  if (error) {
-    formError.value = error.message
-  } else {
-    modal.value = false // Cerrar modal
-    await cargarGastos()
-  }
+  if (error) { formError.value = error.message } else { modal.value = false; await cargarGastos() }
   saving.value = false
 }
 
 const saveMeta = async () => {
-  if (!metaForm.value.nombre.trim() || !metaForm.value.montoMeta) {
-    alert('Completa todos los campos')
-    return
-  }
-
-  saving.value = true // Estado de guardado
+  if (!metaForm.value.nombre.trim() || !metaForm.value.montoMeta) { alert('Completa todos los campos'); return }
+  saving.value = true
   const { error } = await supabase.from('metas').insert({
-    nombre: metaForm.value.nombre.trim(),
-    monto_meta: parseFloat(metaForm.value.montoMeta),
-    es_compartida: metaForm.value.esCompartida,
-    fecha_limite: metaForm.value.fechaLimite || null,
+    nombre: metaForm.value.nombre.trim(), monto_meta: parseFloat(metaForm.value.montoMeta),
+    es_compartida: metaForm.value.esCompartida, fecha_limite: metaForm.value.fechaLimite || null,
     perfil_id: miPerfil.value.id
   })
-
-  if (error) {
-    alert('Error: ' + error.message)
-  } else {
-    modal.value = false // Cerrar modal
-    await cargarMetas()
-  }
+  if (error) { alert('Error: ' + error.message) } else { modal.value = false; await cargarMetas() }
   saving.value = false
 }
 
 const saveDeuda = async () => {
-  if (!deudaForm.value.descripcion.trim() || !deudaForm.value.monto) {
-    alert('Completa todos los campos')
-    return
-  }
-
-  saving.value = true // Estado de guardado
+  if (!deudaForm.value.descripcion.trim() || !deudaForm.value.monto) { alert('Completa todos los campos'); return }
+  saving.value = true
   const { error } = await supabase.from('deudas').insert({
-    descripcion: deudaForm.value.descripcion.trim(),
-    monto: parseFloat(deudaForm.value.monto),
-    fecha_vencimiento: deudaForm.value.fechaVencimiento || null,
-    perfil_id: miPerfil.value.id
+    descripcion: deudaForm.value.descripcion.trim(), monto: parseFloat(deudaForm.value.monto),
+    fecha_vencimiento: deudaForm.value.fechaVencimiento || null, perfil_id: miPerfil.value.id
   })
-
-  if (error) {
-    alert('Error: ' + error.message)
-  } else {
-    modal.value = false // Cerrar modal
-    await cargarDeudas()
-  }
+  if (error) { alert('Error: ' + error.message) } else { modal.value = false; await cargarDeudas() }
   saving.value = false
 }
 
 const deleteTxn = async (id) => {
-  // Verificar que el gasto sea del usuario actual
-  const txn = txns.value.find(t => t.id === id) // Buscar transacción
-  if (!txn || txn.perfil_id !== miPerfil.value?.id) { // Verificar propiedad
-    alert('Solo puedes eliminar tus propios movimientos')
-    return
-  }
-
+  const txn = txns.value.find(t => t.id === id)
+  if (!txn || txn.perfil_id !== miPerfil.value?.id) { alert('Solo puedes eliminar tus propios movimientos'); return }
   if (!confirm('¿Eliminar este movimiento?')) return
-
   const { error } = await supabase.from('transacciones').delete().eq('id', id)
-  if (error) {
-    alert('Error: ' + error.message)
-  } else {
-    await cargarGastos()
-  }
+  if (error) alert('Error: ' + error.message); else await cargarGastos()
 }
 
 const deleteMeta = async (id) => {
-  // Verificar que la meta sea del usuario actual
-  const meta = goals.value.find(g => g.id === id) // Buscar meta
-  if (!meta || meta.perfil_id !== miPerfil.value?.id) { // Verificar propiedad
-    alert('Solo puedes eliminar tus propias metas')
-    return
-  }
-
-  if (!confirm('¿Eliminar esta meta?')) return // Confirmación
-
+  const meta = goals.value.find(g => g.id === id)
+  if (!meta || meta.perfil_id !== miPerfil.value?.id) { alert('Solo puedes eliminar tus propias metas'); return }
+  if (!confirm('¿Eliminar esta meta?')) return
   const { error } = await supabase.from('metas').delete().eq('id', id)
-  if (error) {
-    alert('Error: ' + error.message)
-  } else {
-    await cargarMetas()
-  }
+  if (error) alert('Error: ' + error.message); else await cargarMetas()
 }
 
 const deleteDeuda = async (id) => {
-  // Verificar que la deuda sea del usuario actual
-  const deuda = deudas.value.find(d => d.id === id) // Buscar deuda
-  if (!deuda || deuda.perfil_id !== miPerfil.value?.id) { // Verificar propiedad
-    alert('Solo puedes eliminar tus propias deudas')
-    return
-  }
-
-  if (!confirm('¿Eliminar esta deuda?')) return // Confirmación
-
+  const deuda = deudas.value.find(d => d.id === id)
+  if (!deuda || deuda.perfil_id !== miPerfil.value?.id) { alert('Solo puedes eliminar tus propias deudas'); return }
+  if (!confirm('¿Eliminar esta deuda?')) return
   const { error } = await supabase.from('deudas').delete().eq('id', id)
-  if (error) {
-    alert('Error: ' + error.message)
-  } else {
-    await cargarDeudas()
-  }
+  if (error) alert('Error: ' + error.message); else await cargarDeudas()
 }
 
 // ==========================================
-// FUNCIONES DE CONEXIÓN DE PAREJAS
+// CONEXIÓN DE PAREJAS
 // ==========================================
-
-// Generar código único de 8 caracteres (alfanumérico)
 const generarCodigoPareja = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let codigo = ''
-  for (let i = 0; i < 8; i++) {
-    codigo += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return codigo // Retornar código generado
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
 }
 
-// Conectar con la pareja usando código
 const conectarPareja = async () => {
   errorConexion.value = ''
-  if (!codigoIngresado.value.trim()) {
-    errorConexion.value = 'Ingresa el código de pareja'
-    return
-  }
-
+  if (!codigoIngresado.value.trim()) { errorConexion.value = 'Ingresa el código de pareja'; return }
   conectandoPareja.value = true
-
   try {
-    // 1. Buscar el perfil con ese código
-    const { data: perfilPareja, error: errorBusqueda } = await supabase
-      .from('perfiles')
-      .select('*')
-      .eq('codigo_pareja', codigoIngresado.value.toUpperCase())
-      .single()
-
-    if (errorBusqueda || !perfilPareja) { // Si no se encuentra el perfil
-      errorConexion.value = 'Código inválido o no encontrado'
-      conectandoPareja.value = false
-      return
-    }
-
-    // 2. Verificar que no sea el mismo usuario
-    if (perfilPareja.id === miPerfil.value.id) {
-      errorConexion.value = 'No puedes conectarte contigo mismo' // Evitar auto-conexión
-      conectandoPareja.value = false
-      return
-    }
-
-    // 3. Conectar bidireccional
-    const { error: errorUpdate1 } = await supabase
-      .from('perfiles')
-      .update({ pareja_id_conectada: perfilPareja.id, conectado: true })
-      .eq('id', miPerfil.value.id) // Actualizar perfil propio
-
-    const { error: errorUpdate2 } = await supabase
-      .from('perfiles')
-      .update({ pareja_id_conectada: miPerfil.value.id, conectado: true })
-      .eq('id', perfilPareja.id) // Actualizar perfil de la pareja
-
-    if (errorUpdate1 || errorUpdate2) {
-      errorConexion.value = 'Error al conectar. Intenta nuevamente'
-      conectandoPareja.value = false
-      return
-    }
-
-    // 4. Actualizar estado local
-    miPerfil.value.pareja_id_conectada = perfilPareja.id // Actualizar ID de pareja
-    miPerfil.value.conectado = true // Marcar como conectado
-    parejaPerfil.value = perfilPareja // Asignar perfil de pareja
-
-    // 5. Recargar datos de la app
+    const { data: perfilPareja, error: errorBusqueda } = await supabase.from('perfiles')
+      .select('*').eq('codigo_pareja', codigoIngresado.value.toUpperCase()).single()
+    if (errorBusqueda || !perfilPareja) { errorConexion.value = 'Código inválido o no encontrado'; conectandoPareja.value = false; return }
+    if (perfilPareja.id === miPerfil.value.id) { errorConexion.value = 'No puedes conectarte contigo mismo'; conectandoPareja.value = false; return }
+    const [{ error: e1 }, { error: e2 }] = await Promise.all([
+      supabase.from('perfiles').update({ pareja_id_conectada: perfilPareja.id, conectado: true }).eq('id', miPerfil.value.id),
+      supabase.from('perfiles').update({ pareja_id_conectada: miPerfil.value.id, conectado: true }).eq('id', perfilPareja.id)
+    ])
+    if (e1 || e2) { errorConexion.value = 'Error al conectar. Intenta nuevamente'; conectandoPareja.value = false; return }
+    miPerfil.value.pareja_id_conectada = perfilPareja.id
+    miPerfil.value.conectado = true
+    parejaPerfil.value = perfilPareja
     await Promise.all([cargarGastos(), cargarMetas(), cargarDeudas()])
-
-    showConexionModal.value = false
-    codigoIngresado.value = ''
+    showConexionModal.value = false; codigoIngresado.value = ''
     alert('¡Conectado con éxito!')
-  } catch (err) {
-    errorConexion.value = 'Error en la conexión: ' + err.message
-  }
-
+  } catch (err) { errorConexion.value = 'Error: ' + err.message }
   conectandoPareja.value = false
 }
 
-// Desconectar pareja
-const desconectarPareja = async () => { // Función para desconectar
-  if (!confirm('¿Desconectar de tu pareja? Podrás conectarte de nuevo con el código.')) return // Confirmación
-
+const desconectarPareja = async () => {
+  if (!confirm('¿Desconectar de tu pareja?')) return
   try {
-    // 1. Desconectar bidireccional
-    if (parejaPerfil.value?.id) { // Si hay pareja conectada
-      await supabase
-        .from('perfiles')
-        .update({ pareja_id_conectada: null, conectado: false })
-        .eq('id', parejaPerfil.value.id) // Actualizar perfil de la pareja
-    }
-
-    const { error } = await supabase
-      .from('perfiles')
-      .update({ pareja_id_conectada: null, conectado: false })
-      .eq('id', miPerfil.value.id) // Actualizar perfil propio
-
-    if (error) {
-      alert('Error al desconectar')
-      return
-    }
-
-    miPerfil.value.pareja_id_conectada = null // Limpiar ID de pareja
-    miPerfil.value.conectado = false // Marcar como desconectado
-    parejaPerfil.value = null // Limpiar perfil de pareja
-    txns.value = [] // Limpiar transacciones
-    goals.value = [] // Limpiar metas
-    deudas.value = [] // Limpiar deudas
-
-    alert('Desconectado exitosamente') // Mensaje de éxito
-  } catch (err) {
-    alert('Error: ' + err.message) // Mensaje de error
-  }
+    if (parejaPerfil.value?.id) await supabase.from('perfiles').update({ pareja_id_conectada: null, conectado: false }).eq('id', parejaPerfil.value.id)
+    const { error } = await supabase.from('perfiles').update({ pareja_id_conectada: null, conectado: false }).eq('id', miPerfil.value.id)
+    if (error) { alert('Error al desconectar'); return }
+    miPerfil.value.pareja_id_conectada = null; miPerfil.value.conectado = false
+    parejaPerfil.value = null; txns.value = []; goals.value = []; deudas.value = []
+    alert('Desconectado exitosamente')
+  } catch (err) { alert('Error: ' + err.message) }
 }
 
-// LOGICA DE AUTOMATIZACIÓN CONTABLE (Crear Gasto al Abonar)
+// ==========================================
+// ABONOS Y APORTES (AUTOMATIZACIÓN CONTABLE)
+// ==========================================
 const abonarDeuda = async (deuda) => {
   const montoAbono = parseFloat(deudaInputs.value[deuda.id])
   if (!montoAbono || montoAbono <= 0) return alert('Ingresa un monto válido')
-  
   const nuevoPagado = Number(deuda.monto_pagado || 0) + montoAbono
-  if (nuevoPagado > Number(deuda.monto)) return alert('Estás abonando más del total de tu deuda')
-
-  // 1. Actualizar la deuda
+  if (nuevoPagado > Number(deuda.monto)) return alert('Estás abonando más del total')
   await supabase.from('deudas').update({ monto_pagado: nuevoPagado }).eq('id', deuda.id)
-  
-  // 2. Crear transacción automática para que descuente de "Tu saldo"
   await supabase.from('transacciones').insert({
-    descripcion: `Abono a deuda: ${deuda.descripcion}`,
-    monto: montoAbono, categoria: 'Otros', tipo: 'individual_mio', metodo_pago: 'efectivo', es_ingreso: false, perfil_id: miPerfil.value.id
+    descripcion: `Abono a deuda: ${deuda.descripcion}`, monto: montoAbono,
+    categoria: 'Otros', tipo: 'individual_mio', metodo_pago: 'efectivo',
+    es_ingreso: false, perfil_id: miPerfil.value.id
   })
-  
-  deudaInputs.value[deuda.id] = ''; await Promise.all([cargarDeudas(), cargarGastos()])
+  deudaInputs.value[deuda.id] = ''
+  await Promise.all([cargarDeudas(), cargarGastos()])
 }
 
 const aportarMeta = async (meta) => {
   const montoAporte = parseFloat(metaInputs.value[meta.id])
   if (!montoAporte || montoAporte <= 0) return alert('Ingresa un monto válido')
-
   const nuevoMonto = Number(meta.monto_actual) + montoAporte
-  if (nuevoMonto > Number(meta.monto_meta)) return alert('Estás aportando más del objetivo de la meta')
-
+  if (nuevoMonto > Number(meta.monto_meta)) return alert('Estás aportando más del objetivo')
   await supabase.from('metas').update({ monto_actual: nuevoMonto }).eq('id', meta.id)
-  
   await supabase.from('transacciones').insert({
-    descripcion: `Aporte a meta: ${meta.nombre}`,
-    monto: montoAporte, categoria: 'Otros', tipo: meta.es_compartida ? 'compartido' : 'individual_mio', metodo_pago: 'efectivo', es_ingreso: false, perfil_id: miPerfil.value.id
+    descripcion: `Aporte a meta: ${meta.nombre}`, monto: montoAporte,
+    categoria: 'Otros', tipo: meta.es_compartida ? 'compartido' : 'individual_mio',
+    metodo_pago: 'efectivo', es_ingreso: false, perfil_id: miPerfil.value.id
   })
-
-  metaInputs.value[meta.id] = ''; await Promise.all([cargarMetas(), cargarGastos()])
+  metaInputs.value[meta.id] = ''
+  await Promise.all([cargarMetas(), cargarGastos()])
 }
+
+// FIX: stroke-dasharray como string (no array) para compatibilidad SVG
+const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
 </script>
 
 <template>
   <div class="min-h-screen bg-gray-50">
-    <!-- AUTENTICACIÓN --> 
+
+    <!-- AUTENTICACIÓN -->
     <div v-if="!session" class="flex items-center justify-center min-h-screen">
-      <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 class="text-3xl font-extrabold text-center text-blue-600 mb-6">Ahorro de tragonsite y gordita</h1>
-        <form @submit.prevent="login" class="space-y-4">
-          <input v-model="email" type="email" placeholder="Email" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
-          <input v-model="password" type="password" placeholder="Contraseña" class="w-full p-3 border border-blue-200 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
-          <button type="submit" :disabled="authLoading" class="w-full bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors duration-200">
-            <LogIn class="w-5 h-5 inline mr-2" />{{ authLoading ? 'Iniciando...' : 'Iniciar Sesión' }}
+      <div class="bg-white p-8 rounded-2xl shadow-md w-full max-w-md">
+        <div class="flex justify-center mb-5">
+          <div class="flex items-center -space-x-3">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center text-sm font-bold shadow-lg z-10">DIA</div>
+            <div class="w-10 h-10 rounded-full bg-white border-2 border-pink-200 text-pink-400 flex items-center justify-center shadow-sm z-20 text-base">♥</div>
+            <div class="w-12 h-12 rounded-2xl bg-slate-800 text-white flex items-center justify-center text-sm font-bold shadow-lg z-10">DIE</div>
+          </div>
+        </div>
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-1">
+          Ahorro de <span class="text-emerald-600">tragonsite y gordita</span>
+        </h1>
+        <p class="text-center text-sm text-gray-400 mb-6">Tu espacio financiero compartido</p>
+        <form @submit.prevent="login" class="space-y-3">
+          <input v-model="email" type="email" placeholder="Email" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500" required>
+          <input v-model="password" type="password" placeholder="Contraseña" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500" required>
+          <button type="submit" :disabled="authLoading" class="w-full bg-emerald-600 text-white p-3 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors duration-200 flex items-center justify-center gap-2">
+            <LogIn class="w-4 h-4" />{{ authLoading ? 'Iniciando...' : 'Ingresar' }}
           </button>
         </form>
       </div>
     </div>
 
     <!-- CONFIGURACIÓN INICIAL -->
-    <div v-else-if="showConfig" class="flex items-center justify-center min-h-screen bg-blue-50"> 
-      <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-lg w-full max-w-sm sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold text-center mb-6 text-blue-600">Configuración Inicial</h2>
-        <p class="text-gray-600 mb-4 text-center">Establece los saldos iniciales para comenzar tu aventura de ahorro.</p>
+    <div v-else-if="showConfig" class="flex items-center justify-center min-h-screen bg-emerald-50">
+      <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg w-full max-w-md">
+        <h2 class="text-2xl font-bold text-center mb-2 text-emerald-600">Configuración Inicial</h2>
+        <p class="text-gray-500 mb-6 text-center text-sm">Establece los saldos de partida para comenzar</p>
         <form @submit.prevent="guardarConfig" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tu saldo inicial</label>
-            <input v-model="configForm.miSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            <input v-model="configForm.miSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500" required>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Saldo inicial de tu pareja</label>
-            <input v-model="configForm.parejaSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            <input v-model="configForm.parejaSaldoInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500" required>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Fondo común inicial</label>
-            <input v-model="configForm.fondoComunInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            <input v-model="configForm.fondoComunInicial" type="number" step="0.01" placeholder="0.00" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500" required>
           </div>
-          <button type="submit" class="w-full bg-green-500 text-white p-3 rounded-lg hover:bg-green-600 transition-colors duration-200">
-            Guardar Configuración
+          <button type="submit" class="w-full bg-emerald-600 text-white p-3 rounded-xl hover:bg-emerald-700 transition-colors duration-200">
+            Guardar y comenzar
           </button>
         </form>
       </div>
     </div>
 
     <!-- APLICACIÓN PRINCIPAL -->
-    <div v-else class="container mx-auto px-4 sm:px-6 lg:px-8 py-8"> 
+    <div v-else class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
       <!-- HEADER -->
-      <header class="flex justify-between items-center mb-6">
-        <div>
-          <h1 class="text-3xl font-extrabold text-blue-600">Ahorro de tragonsite y gordita</h1>
-          <p class="text-sm text-gray-600 mt-1">
-            {{ miPerfil?.conectado ? '✅ Conectado(' + parejaPerfil?.nombre + ')' : '❌ Sin conectar' }}
-          </p>
+      <header class="flex flex-col gap-4 sm:flex-row sm:items-center justify-between mb-6">
+        <div class="space-y-1.5">
+          <h1 class="text-2xl font-semibold text-gray-800">
+            Ahorro de <span class="text-emerald-600">tragonsite y gordita</span>
+          </h1>
+          <div class="inline-flex items-center gap-2 text-sm">
+            <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 shadow-sm"
+              :class="miPerfil?.conectado ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'">
+              <span>{{ miPerfil?.conectado ? '✅' : '❌' }}</span>
+              <span>{{ miPerfil?.conectado ? `Conectado · ${parejaPerfil?.nombre}` : 'Sin conectar' }}</span>
+            </span>
+          </div>
         </div>
-        <div class="flex gap-2">
-          <button 
-            v-if="!miPerfil?.conectado"
-            @click="showConexionModal = true"
-            class="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors duration-200"
-          >
-            <Edit class="w-4 h-4" />Conectar Pareja
+        <div class="flex flex-wrap gap-2">
+          <button v-if="!miPerfil?.conectado" @click="showConexionModal = true"
+            class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors text-sm">
+            <Edit class="w-4 h-4" />Conectar pareja
           </button>
-          <button 
-            v-else
-            @click="desconectarPareja"
-            class="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors duration-200"
-          >
+          <button v-else @click="desconectarPareja"
+            class="inline-flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-xl hover:bg-orange-600 transition-colors text-sm">
             <X class="w-4 h-4" />Desconectar
           </button>
-          <button @click="logout" class="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors duration-200">
-            <LogOut class="w-4 h-4" />
-            Salir
+          <button @click="logout"
+            class="inline-flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-xl hover:bg-red-600 transition-colors text-sm">
+            <LogOut class="w-4 h-4" />Salir
           </button>
         </div>
       </header>
 
       <!-- LOADING -->
-      <div v-if="loading" class="text-center py-8">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-        <p class="mt-4 text-gray-600">Cargando...</p>
+      <div v-if="loading" class="text-center py-16">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto"></div>
+        <p class="mt-4 text-gray-500 text-sm">Cargando tu información...</p>
       </div>
 
-      <!-- CONTENIDO PRINCIPAL -->
       <div v-else>
+        <!-- BANNER INTELIGENTE -->
+        <div class="mb-6 rounded-3xl border border-emerald-200 bg-emerald-50 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 mb-1">{{ saludo }}</p>
+            <h2 class="text-xl font-bold text-slate-900">
+              {{ txns.length === 0 ? 'Bienvenido a tu espacio financiero' : 'Aquí tienes tu resumen del mes' }}
+            </h2>
+            <p class="text-sm text-emerald-700 mt-1">
+              {{ sBal > 0 ? `Fondo común: ${fmt(sBal)} · sigan así 💪` : 'El fondo común está en cero, ¡hora de aportar!' }}
+            </p>
+          </div>
+          <div @click="activeTab = 'Movimientos'"
+            class="rounded-2xl bg-white p-4 flex items-center gap-3 border border-emerald-100
+                   cursor-pointer hover:border-emerald-400 hover:shadow-md transition-all duration-200 group flex-shrink-0">
+            <span class="text-2xl select-none">{{ greetingEmoji }}</span>
+            <div>
+              <p class="text-sm font-semibold text-slate-700">Hola, {{ miPerfil?.nombre || 'amigo' }}</p>
+              <p class="text-xs text-emerald-600 font-medium group-hover:underline">{{ insightBanner }}</p>
+            </div>
+          </div>
+        </div>
+
         <!-- BALANCES -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div :class="['transform-gpu rounded-lg border p-6 shadow-md flex items-center justify-between', myBalAnimating ? 'animate-jump border-emerald-200 bg-gradient-to-br from-white to-emerald-50' : 'border-emerald-200 bg-gradient-to-br from-white to-emerald-50']">
-            <div class="flex items-center justify-between w-full gap-4">
-              <div>
-                <p class="text-sm text-gray-600">Tu saldo</p>
-                <p class="text-2xl font-bold text-emerald-600">{{ fmt(myBal) }}</p>
-              </div>
-              <div class="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
-                <DollarSign class="w-6 h-6 text-emerald-600" />
-              </div>
+          <div :class="['transform-gpu rounded-2xl border p-5 flex items-center justify-between', myBalAnimating ? 'animate-jump' : '', 'border-emerald-200 bg-gradient-to-br from-white to-emerald-50']">
+            <div>
+              <p class="text-xs text-gray-500 font-medium mb-1">Tu saldo</p>
+              <p class="text-2xl font-bold text-emerald-600">{{ fmt(myBal) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <span class="text-sm font-bold text-emerald-700">{{ getInitials(miPerfil?.nombre) }}</span>
             </div>
           </div>
-          <div :class="['transform-gpu rounded-lg border p-6 shadow-md flex items-center justify-between', pBalAnimating ? 'animate-jump border-blue-200 bg-gradient-to-br from-white to-blue-50' : 'border-blue-200 bg-gradient-to-br from-white to-blue-50']">
-            <div class="flex items-center justify-between w-full gap-4">
-              <div>
-                <p class="text-sm text-gray-600">Saldo pareja</p>
-                <p class="text-2xl font-bold text-blue-600">{{ fmt(pBal) }}</p>
-              </div>
-              <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                <DollarSign class="w-6 h-6 text-blue-600" />
-              </div>
+          <div :class="['transform-gpu rounded-2xl border p-5 flex items-center justify-between', pBalAnimating ? 'animate-jump' : '', 'border-blue-200 bg-gradient-to-br from-white to-blue-50']">
+            <div>
+              <p class="text-xs text-gray-500 font-medium mb-1">{{ parejaPerfil?.nombre || 'Pareja' }}</p>
+              <p class="text-2xl font-bold text-blue-600">{{ fmt(pBal) }}</p>
+              <p v-if="!parejaPerfil" class="text-xs text-gray-400 mt-1">Pendiente de configurar</p>
+            </div>
+            <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <span class="text-sm font-bold text-blue-700">{{ getInitials(parejaPerfil?.nombre) }}</span>
             </div>
           </div>
-          <div :class="['transform-gpu rounded-lg border p-6 shadow-md flex items-center justify-between', sBalAnimating ? 'animate-jump border-amber-200 bg-gradient-to-br from-white to-amber-50' : 'border-amber-200 bg-gradient-to-br from-white to-amber-50']">
-            <div class="flex items-center justify-between w-full gap-4">
-              <div>
-                <p class="text-sm text-gray-600">Fondo común</p>
-                <p class="text-2xl font-bold text-amber-600">{{ fmt(sBal) }}</p>
-              </div>
-              <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
-                <DollarSign class="w-6 h-6 text-amber-600" />
-              </div>
+          <div :class="['transform-gpu rounded-2xl border p-5 flex items-center justify-between', sBalAnimating ? 'animate-jump' : '', 'border-amber-200 bg-gradient-to-br from-white to-amber-50']">
+            <div>
+              <p class="text-xs text-gray-500 font-medium mb-1">Fondo común</p>
+              <p class="text-2xl font-bold text-amber-600">{{ fmt(sBal) }}</p>
             </div>
+            <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0 text-xl">🤝</div>
           </div>
         </div>
 
         <!-- PESTAÑAS -->
-        <div class="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg">
-          <button
-            v-for="tab in ['Resumen', 'Movimientos', 'Metas', 'Deudas']"
-            :key="tab"
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6 bg-gray-100 p-2 rounded-2xl">
+          <button v-for="tab in ['Resumen', 'Movimientos', 'Metas', 'Deudas']" :key="tab"
             @click="activeTab = tab"
-            :class="[ 
-              'flex-1 py-2 px-4 rounded-md font-medium transition-colors',
-              activeTab === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-            ]"
-          >
+            :class="['w-full py-2.5 rounded-xl text-sm font-semibold transition-colors duration-200',
+              activeTab === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800']">
             {{ tab }}
           </button>
         </div>
 
-        <!-- CONTENIDO DE PESTAÑAS -->
-        <div class="bg-white rounded-lg shadow-md p-6">
+        <!-- CONTENIDO -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <Transition name="fade" mode="out-in">
             <div :key="activeTab">
+
               <!-- RESUMEN -->
               <div v-if="activeTab === 'Resumen'">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <h3 class="text-lg font-semibold mb-4">Últimos Movimientos</h3>
-                    <div class="space-y-3">
-                      <div v-for="txn in txns.slice(0, 5)" :key="txn.id" class="flex justify-between p-3 bg-gray-50 rounded-lg">
-                        <div class="flex gap-2 items-center">
-                          <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" :class="txn.es_ingreso ? 'text-emerald-500' : 'text-red-500'" class="w-5 h-5"/>
+                    <h3 class="text-base font-semibold mb-4 text-gray-800">Últimos movimientos</h3>
+                    <div v-if="txns.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500 text-sm">
+                      Aún no hay movimientos. Registra el primero.
+                    </div>
+                    <div v-else class="space-y-2">
+                      <div v-for="txn in txns.slice(0, 5)" :key="txn.id" class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                        <div class="flex gap-2.5 items-center">
+                          <div :class="['w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0', CC[txn.categoria]?.bg || 'bg-gray-100']">
+                            <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" class="w-4 h-4" :class="CC[txn.categoria]?.tx" />
+                          </div>
                           <div>
-                            <p class="font-medium">{{ txn.descripcion }}</p>
-                            <p class="text-sm text-gray-600">{{ formatDate(txn.creado_en) }}</p>
+                            <p class="text-sm font-medium text-gray-800">{{ txn.descripcion }}</p>
+                            <div class="flex items-center gap-1.5 mt-0.5">
+                              <span class="text-xs text-gray-400">{{ formatDate(txn.creado_en) }}</span>
+                              <span :class="['text-xs px-1.5 py-0.5 rounded-full font-medium', CC[txn.categoria]?.bg, CC[txn.categoria]?.tx]">{{ txn.categoria }}</span>
+                            </div>
                           </div>
                         </div>
                         <div class="text-right">
-                          <p :class="['font-semibold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-600']">
+                          <p :class="['text-sm font-bold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-500']">
                             {{ txn.es_ingreso ? '+' : '-' }}{{ fmt(txn.monto) }}
                           </p>
-                          <p class="text-xs text-gray-500">{{ tLbl(getRelativeType(txn)) }}</p>
+                          <p class="text-xs text-gray-400">{{ tLbl(getRelativeType(txn)) }}</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <h3 class="text-lg font-semibold mb-4 text-gray-700">Deudas Activas</h3>
-                    <div class="space-y-3">
-                      <div v-for="d in deudas.slice(0, 3)" :key="d.id" class="p-3 bg-red-50 rounded-lg shadow-sm">
-                        <div class="flex justify-between items-start mb-2">
-                          <p class="font-medium">{{ d.descripcion }}</p>
-                          <p class="text-sm text-gray-600">{{ pctDeuda(d) }}%</p>
+                    <div class="p-4 rounded-2xl border border-slate-100 bg-white mb-5">
+                      <h3 class="text-base font-semibold mb-4 text-gray-800">Gastos por categoría</h3>
+                      <div v-if="donutCategories.length === 0" class="text-center py-6 text-sm text-gray-400">Sin gastos registrados aún</div>
+                      <div v-else>
+                        <div class="relative w-44 h-44 mx-auto mb-4">
+                          <canvas ref="donutCanvas" class="w-full h-full"></canvas>
+                          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span class="text-base font-bold text-slate-900">{{ fmt(totalSpent) }}</span>
+                            <span class="text-xs text-gray-400">gastado</span>
+                          </div>
                         </div>
-                        <div class="w-full bg-gray-200 rounded-full h-2 mb-2">
-                          <div class="h-2 rounded-full bg-red-500" :style="{ width: pctDeuda(d) + '%' }"></div>
+                        <div class="grid grid-cols-2 gap-2">
+                          <div v-for="(item, index) in donutCategories" :key="item.category"
+                            class="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2">
+                            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                              :style="{ backgroundColor: ['#f97316','#3b82f6','#8b5cf6','#ec4899','#eab308','#059669','#6b7280'][index] }"></span>
+                            <span class="text-xs text-slate-600 flex-1 truncate">{{ item.category }}</span>
+                            <span class="text-xs font-semibold text-slate-800">{{ fmt(item.amount) }}</span>
+                          </div>
                         </div>
-                        <p class="text-sm text-gray-600">Falta: {{ fmt(d.monto - (d.monto_pagado || 0)) }}</p>
+                      </div>
+                    </div>
+
+                    <h3 class="text-base font-semibold mb-3 text-gray-800">Deudas activas</h3>
+                    <div v-if="deudas.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-slate-500 text-sm">
+                      Sin deudas activas — ¡excelente!
+                    </div>
+                    <div v-else class="space-y-2">
+                      <div v-for="d in deudas.slice(0, 3)" :key="d.id" class="p-3 bg-red-50 rounded-xl border border-red-100">
+                        <div class="flex justify-between items-center mb-2">
+                          <p class="text-sm font-medium text-gray-800">{{ d.descripcion }}</p>
+                          <p class="text-xs font-semibold text-red-600">{{ pctDeuda(d) }}%</p>
+                        </div>
+                        <div class="w-full bg-red-100 rounded-full h-1.5 mb-1.5">
+                          <div class="bg-red-500 h-1.5 rounded-full" :style="{ width: pctDeuda(d) + '%' }"></div>
+                        </div>
+                        <p class="text-xs text-gray-500">Falta: {{ fmt(d.monto - (d.monto_pagado || 0)) }}</p>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <!-- GASTOS -->
-          <div v-if="activeTab === 'Movimientos'">
-            <div class="flex justify-between items-center mb-4">
-              <h2 class="text-xl font-semibold text-gray-700">Historial de Movimientos</h2>
-              <button @click="openModal('gasto')" class="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors duration-200">
-                <Plus class="w-4 h-4" />
-                Nuevo Movimiento
-              </button>
-            </div>
-
-            <!-- FILTROS -->
-            <div class="flex gap-2 mb-4">
-              <button
-                v-for="f in ['all', 'individual_mio', 'individual_tuyo', 'compartido']"
-                :key="f"
-                @click="filt = f"
-                :class="[
-                  'px-3 py-1 rounded-full text-sm font-medium transition-colors duration-200',
-                  filt === f ? 'bg-blue-500 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                ]"
-              >
-                {{ f === 'all' ? 'Todos' : tLbl(f) }}
-              </button>
-            </div>
-
-            <!-- LISTA DE GASTOS -->
-            <div class="space-y-3">
-              <div v-for="txn in filtTxns" :key="txn.id" class="flex justify-between items-center p-3 sm:p-4 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors duration-150">
-                <div class="flex items-center gap-3">
-                  <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" :class="txn.es_ingreso ? 'text-emerald-500' : 'text-red-500'" class="w-5 h-5"/>
-                    <div>
-                      <p class="font-medium text-gray-800">{{ txn.descripcion }}</p>
-                      <p class="text-sm text-gray-600">
-                        {{ formatDate(txn.creado_en) }} • {{ txn.categoria }} • <span class="font-medium">{{ getQuienHizoGasto(txn) }}</span>
-                        <span v-if="txn.metodo_pago" class="flex items-center gap-1 ml-2">
-                          <component :is="METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.icon || DollarSign" class="w-3 h-3" /> {{ METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.label || txn.metodo_pago }}
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                <div class="flex items-center gap-3">
-                  <div class="text-right"> 
-                    <p :class="['font-semibold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-600']">
-                      {{ txn.es_ingreso ? '+' : '-' }}{{ fmt(txn.monto) }}
-                    </p>
-                    <p class="text-xs text-gray-500">{{ tLbl(getRelativeType(txn)) }}</p>
-                  </div>
-                  <button v-if="txn.perfil_id === miPerfil?.id" @click="deleteTxn(txn.id)" class="text-red-500 hover:text-red-700 transition-colors duration-150">
-                    <Trash2 class="w-4 h-4" />
+              <!-- MOVIMIENTOS -->
+              <div v-if="activeTab === 'Movimientos'">
+                <div class="flex justify-between items-center mb-4">
+                  <h2 class="text-base font-semibold text-gray-800">Historial de movimientos</h2>
+                  <button @click="openModal('gasto')"
+                    class="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors text-sm">
+                    <Plus class="w-4 h-4" />Nuevo
                   </button>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- METAS -->
-          <div v-if="activeTab === 'Metas'">
-            <div class="flex justify-between items-center mb-4">
-              <h2 class="text-xl font-semibold text-gray-700">Metas de Ahorro</h2>
-              <button @click="openModal('meta')" class="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors duration-200">
-                <Target class="w-4 h-4" />
-                Nueva Meta
-              </button>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4"> 
-              <div v-for="goal in goals" :key="goal.id" class="p-4 border border-gray-200 rounded-lg shadow-sm bg-white">
-                <div class="flex justify-between items-start mb-3">
-                  <h3 class="font-semibold text-gray-800">{{ goal.nombre }}</h3>
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm text-gray-600">{{ pct(goal) }}%</span>
-                    <button v-if="goal.perfil_id === miPerfil?.id" @click="deleteMeta(goal.id)" class="text-red-500 hover:text-red-700 transition-colors duration-150"> 
-                      <Trash2 class="w-4 h-4" />
-                    </button>
-                  </div>
+                <div class="flex gap-2 mb-4 flex-wrap">
+                  <button v-for="f in ['all', 'individual_mio', 'individual_tuyo', 'compartido']" :key="f"
+                    @click="filt = f"
+                    :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
+                      filt === f ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
+                    {{ f === 'all' ? `Todos (${txns.length})` : tLbl(f) }}
+                  </button>
                 </div>
-
-                <div class="w-full bg-gray-200 rounded-full h-3 mb-2">
-                  <div :class="['h-3 rounded-full', pct(goal) >= 100 ? 'bg-green-500' : 'bg-blue-500']" :style="{ width: pct(goal) + '%' }"></div>
+                <div v-if="filtTxns.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500 text-sm">
+                  Sin movimientos para este filtro.
                 </div>
-
-                <div class="flex justify-between text-sm text-gray-600 mb-3">
-                  <span>{{ fmt(goal.monto_actual) }}</span>
-                  <span>{{ fmt(goal.monto_meta) }}</span>
-                </div>
-
-                <div class="flex items-center justify-between">
-                  <span class="text-xs text-gray-500">
-                    {{ goal.es_compartida ? 'Compartida' : 'Individual' }}
-                    <span v-if="goal.fecha_limite">• Vence: {{ formatDate(goal.fecha_limite) }}</span>
-                  </span> 
-                  <div class="flex items-center gap-2 border-t border-gray-100 pt-3 mt-3">
-                    <input type="number" v-model="metaInputs[goal.id]" placeholder="Monto" class="w-20 p-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" step="0.01">
-                    <button
-                      @click="aportarMeta(goal)"
-                      :disabled="pct(goal) >= 100 || saving"
-                      class="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50 transition-colors duration-200"
-                    >
-                      Aportar
-                    </button>
+                <div v-else class="space-y-2">
+                  <div v-for="txn in filtTxns" :key="txn.id"
+                    class="flex items-center justify-between p-3 sm:p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
+                    <div class="flex items-center gap-3">
+                      <div :class="['w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', CC[txn.categoria]?.bg || 'bg-gray-100']">
+                        <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" class="w-5 h-5" :class="CC[txn.categoria]?.tx" />
+                      </div>
+                      <div>
+                        <p class="text-sm font-semibold text-gray-800">{{ txn.descripcion }}</p>
+                        <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          <span class="text-xs text-gray-400">{{ formatDate(txn.creado_en) }}</span>
+                          <span :class="['text-xs px-2 py-0.5 rounded-full font-medium', CC[txn.categoria]?.bg, CC[txn.categoria]?.tx]">{{ txn.categoria }}</span>
+                          <span class="text-xs text-gray-500 font-medium">{{ getQuienHizoGasto(txn) }}</span>
+                          <span v-if="txn.metodo_pago" class="text-xs text-gray-400 flex items-center gap-0.5">
+                            <component :is="METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.icon || DollarSign" class="w-3 h-3" />
+                            {{ METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.label }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <div class="text-right">
+                        <p :class="['text-sm font-bold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-500']">
+                          {{ txn.es_ingreso ? '+' : '-' }}{{ fmt(txn.monto) }}
+                        </p>
+                        <span :class="['text-xs px-2 py-0.5 rounded-full font-medium', tBg(getRelativeType(txn)), tTx(getRelativeType(txn))]">
+                          {{ tLbl(getRelativeType(txn)) }}
+                        </span>
+                      </div>
+                      <button v-if="txn.perfil_id === miPerfil?.id" @click="deleteTxn(txn.id)" class="text-red-400 hover:text-red-600 transition-colors">
+                        <Trash2 class="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <!-- DEUDAS -->
-          <div v-if="activeTab === 'Deudas'">
-            <div class="flex justify-between items-center mb-4">
-              <h2 class="text-xl font-semibold text-gray-700">Mis Deudas</h2>
-              <button @click="openModal('deuda')" class="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors duration-200">
-                <Plus class="w-4 h-4" />
-                Nueva Deuda
-              </button>
-            </div>
-
-            <div class="mb-4 p-4 bg-red-50 rounded-lg border border-red-200 shadow-sm">
-              <p class="text-red-800 font-medium">Deuda restante por pagar: {{ fmt(totalDeudas) }}</p>
-            </div>
-
-            <div class="space-y-4"> 
-              <div v-for="deuda in deudas" :key="deuda.id" class="p-4 border border-gray-200 rounded-lg shadow-sm bg-white">
-                <div class="flex justify-between items-start mb-2">
-                  <div>
-                  <p class="font-medium">{{ deuda.descripcion }}</p>
-                  <p class="text-sm text-gray-600">
-                    Total original: {{ fmt(deuda.monto) }}
-                    <span v-if="deuda.fecha_vencimiento">• Vence: {{ formatDate(deuda.fecha_vencimiento) }}</span>
-                  </p>
+              <!-- METAS -->
+              <div v-if="activeTab === 'Metas'">
+                <div class="flex justify-between items-center mb-4">
+                  <h2 class="text-base font-semibold text-gray-800">Metas de ahorro</h2>
+                  <button @click="openModal('meta')"
+                    class="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors text-sm">
+                    <Target class="w-4 h-4" />Nueva meta
+                  </button>
                 </div>
-                <button v-if="deuda.perfil_id === miPerfil?.id" @click="deleteDeuda(deuda.id)" class="text-red-500 hover:text-red-700 transition-colors duration-150">
-                  <Trash2 class="w-4 h-4" />
-                </button>
+                <div v-if="goals.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                  <Target class="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                  <p class="text-slate-500 text-sm">Sin metas aún. ¡Crea la primera!</p>
                 </div>
-                <div class="w-full bg-gray-200 rounded-full h-2 mb-2">
-                  <div class="bg-red-500 h-2 rounded-full" :style="{ width: pctDeuda(deuda) + '%' }"></div>
-                </div>
-                <div class="flex justify-between text-xs text-gray-600 mb-3">
-                  <span>Pagado: {{ fmt(deuda.monto_pagado || 0) }} ({{ pctDeuda(deuda) }}%)</span>
-                  <span class="font-semibold text-red-600">Falta: {{ fmt(deuda.monto - (deuda.monto_pagado || 0)) }}</span>
-                </div> 
-                <div class="flex items-center justify-end gap-2 border-t border-gray-100 pt-3 mt-3">
-                  <span class="text-sm text-gray-600">Abonar: S/</span>
-                  <input type="number" v-model="deudaInputs[deuda.id]" placeholder="Ej. 100" class="w-20 p-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" step="0.01">
-                  <button @click="abonarDeuda(deuda)" :disabled="pctDeuda(deuda) >= 100 || saving" class="px-4 py-1.5 bg-red-500 text-white text-xs rounded-md hover:bg-red-600 disabled:opacity-50 transition-colors duration-200">Pagar</button>
+                <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div v-for="goal in goals" :key="goal.id" class="p-4 border border-gray-100 rounded-2xl bg-white hover:shadow-sm transition-shadow">
+                    <div class="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 class="font-semibold text-gray-800 text-sm">{{ goal.nombre }}</h3>
+                        <p class="text-xs text-gray-400 mt-0.5">{{ goal.es_compartida ? '🤝 Compartida' : '👤 Individual' }}
+                          <span v-if="goal.fecha_limite"> · vence {{ formatDate(goal.fecha_limite) }}</span>
+                        </p>
+                      </div>
+                      <button v-if="goal.perfil_id === miPerfil?.id" @click="deleteMeta(goal.id)" class="text-red-400 hover:text-red-600 transition-colors">
+                        <Trash2 class="w-4 h-4" />
+                      </button>
+                    </div>
+                    <!-- FIX: stroke-dasharray como string, no array -->
+                    <div class="flex justify-center mb-4">
+                      <div class="relative w-20 h-20">
+                        <svg viewBox="0 0 80 80" class="w-full h-full -rotate-90">
+                          <circle cx="40" cy="40" r="32" fill="transparent" stroke="#e2e8f0" stroke-width="8"/>
+                          <circle cx="40" cy="40" r="32" fill="transparent"
+                            :stroke="pct(goal) >= 100 ? '#059669' : '#3b82f6'"
+                            stroke-width="8" stroke-linecap="round"
+                            :stroke-dasharray="ringDash(goal)"/>
+                        </svg>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                          <span class="text-sm font-bold" :class="pct(goal) >= 100 ? 'text-emerald-600' : 'text-blue-600'">{{ pct(goal) }}%</span>
+                          <span class="text-[10px] text-gray-400">avance</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex justify-between text-xs text-gray-500 mb-3">
+                      <span>{{ fmt(goal.monto_actual) }}</span>
+                      <span class="font-medium text-gray-700">{{ fmt(goal.monto_meta) }}</span>
+                    </div>
+                    <div class="flex items-center gap-2 pt-3 border-t border-gray-50">
+                      <input type="number" v-model="metaInputs[goal.id]" placeholder="S/ monto"
+                        class="flex-1 p-1.5 text-xs border border-gray-200 rounded-lg focus:ring-emerald-500 focus:border-emerald-500" step="0.01">
+                      <button @click="aportarMeta(goal)" :disabled="pct(goal) >= 100 || saving"
+                        class="px-3 py-1.5 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 disabled:opacity-40 transition-colors">
+                        Aportar
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              <!-- DEUDAS -->
+              <div v-if="activeTab === 'Deudas'">
+                <div class="flex justify-between items-center mb-4">
+                  <h2 class="text-base font-semibold text-gray-800">Mis deudas</h2>
+                  <button @click="openModal('deuda')"
+                    class="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded-xl hover:bg-red-600 transition-colors text-sm">
+                    <Plus class="w-4 h-4" />Nueva deuda
+                  </button>
+                </div>
+                <div class="mb-4 p-4 bg-red-50 rounded-xl border border-red-100">
+                  <p class="text-sm font-semibold text-red-700">Total pendiente: {{ fmt(totalDeudas) }}</p>
+                </div>
+                <div v-if="deudas.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-slate-500 text-sm">
+                  Sin deudas registradas — ¡genial!
+                </div>
+                <div v-else class="space-y-3">
+                  <div v-for="deuda in deudas" :key="deuda.id" class="p-4 border border-gray-100 rounded-2xl bg-white">
+                    <div class="flex justify-between items-start mb-3">
+                      <div>
+                        <p class="font-semibold text-gray-800 text-sm">{{ deuda.descripcion }}</p>
+                        <p class="text-xs text-gray-400 mt-0.5">Total: {{ fmt(deuda.monto) }}
+                          <span v-if="deuda.fecha_vencimiento"> · Vence {{ formatDate(deuda.fecha_vencimiento) }}</span>
+                        </p>
+                      </div>
+                      <button v-if="deuda.perfil_id === miPerfil?.id" @click="deleteDeuda(deuda.id)" class="text-red-400 hover:text-red-600 transition-colors">
+                        <Trash2 class="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div class="w-full bg-red-100 rounded-full h-2 mb-2">
+                      <div class="bg-red-500 h-2 rounded-full transition-all" :style="{ width: pctDeuda(deuda) + '%' }"></div>
+                    </div>
+                    <div class="flex justify-between text-xs text-gray-500 mb-3">
+                      <span>Pagado: {{ fmt(deuda.monto_pagado || 0) }} ({{ pctDeuda(deuda) }}%)</span>
+                      <span class="font-semibold text-red-600">Falta: {{ fmt(deuda.monto - (deuda.monto_pagado || 0)) }}</span>
+                    </div>
+                    <div class="flex items-center gap-2 pt-3 border-t border-gray-50">
+                      <span class="text-xs text-gray-500">Abonar:</span>
+                      <input type="number" v-model="deudaInputs[deuda.id]" placeholder="Ej. 100"
+                        class="flex-1 p-1.5 text-xs border border-gray-200 rounded-lg focus:ring-red-500 focus:border-red-500" step="0.01">
+                      <button @click="abonarDeuda(deuda)" :disabled="pctDeuda(deuda) >= 100 || saving"
+                        class="px-4 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600 disabled:opacity-40 transition-colors">
+                        Pagar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
-          </div>
-        </div>
           </Transition>
         </div>
       </div>
     </div>
 
-    <!-- MODALES -->
-    <!-- MODAL CONEXIÓN DE PAREJAS -->
-    <div v-if="showConexionModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"> 
-      <div class="bg-white p-4 sm:p-6 md:p-8 rounded-lg shadow-lg w-full max-w-sm sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold text-gray-800">Conectar con tu Pareja</h3>
-          <button @click="showConexionModal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
-            <X class="w-5 h-5" />
-          </button>
+    <!-- MODAL CONEXIÓN -->
+    <div v-if="showConexionModal" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+        <div class="flex justify-between items-center mb-5">
+          <h3 class="text-base font-semibold text-gray-800">Conectar con tu pareja</h3>
+          <button @click="showConexionModal = false" class="text-gray-400 hover:text-gray-600"><X class="w-5 h-5" /></button>
         </div>
-
         <div class="space-y-4">
-          <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
-            <p class="text-sm text-gray-600 mb-2"><strong>Tu código de pareja:</strong></p>
+          <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-200">
+            <p class="text-xs font-semibold text-emerald-700 mb-2 uppercase tracking-wide">Tu código de pareja</p>
             <div class="flex items-center gap-2">
-              <input 
-                type="text" 
-                :value="miPerfil?.codigo_pareja" 
-                readonly 
-                class="flex-1 p-2 border border-blue-300 rounded bg-blue-100 font-mono text-center font-bold text-blue-800"
-              >
-              <button 
-                @click="navigator.clipboard.writeText(miPerfil?.codigo_pareja)" 
-                class="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm font-medium transition-colors duration-200"
-              >
+              <input type="text" :value="miPerfil?.codigo_pareja" readonly
+                class="flex-1 p-2.5 border border-emerald-300 rounded-xl bg-white font-mono text-center font-bold text-emerald-800 text-lg tracking-widest">
+              <button @click="navigator.clipboard.writeText(miPerfil?.codigo_pareja)"
+                class="px-3 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 text-sm font-medium transition-colors">
                 Copiar
               </button>
             </div>
-            <p class="text-xs text-gray-500 mt-2">Comparte este código con tu pareja</p>
+            <p class="text-xs text-gray-400 mt-2">Comparte este código con Diana</p>
           </div>
- 
-          <div class="border-t border-gray-200 pt-4">
-            <p class="text-sm text-gray-600 mb-2"><strong>Ingresa el código de tu pareja:</strong></p>
-            <input 
-              v-model="codigoIngresado" 
-              type="text" 
-              placeholder="Ej: ABC12345" 
-              class="w-full p-3 border border-gray-300 rounded-lg uppercase focus:ring-blue-500 focus:border-blue-500"
-              :disabled="conectandoPareja"
-            >
+          <div>
+            <p class="text-xs font-semibold text-gray-600 mb-2">Ingresa el código de tu pareja:</p>
+            <input v-model="codigoIngresado" type="text" placeholder="Ej: ABC12345"
+              class="w-full p-3 border border-gray-200 rounded-xl uppercase text-center font-mono font-bold tracking-widest focus:ring-emerald-500 focus:border-emerald-500"
+              :disabled="conectandoPareja">
           </div>
- 
-          <p v-if="errorConexion" class="text-red-600 text-sm bg-red-50 p-3 rounded border border-red-200">{{ errorConexion }}</p>
- 
+          <p v-if="errorConexion" class="text-red-600 text-sm bg-red-50 p-3 rounded-xl border border-red-200">{{ errorConexion }}</p>
           <div class="flex gap-3 justify-end">
-            <button 
-              @click="showConexionModal = false"
-              class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
-              :disabled="conectandoPareja"
-            >
-              Cancelar
-            </button>
-            <button 
-              @click="conectarPareja" 
-              :disabled="conectandoPareja"
-              class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors duration-200"
-            >
+            <button @click="showConexionModal = false" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-xl text-sm transition-colors" :disabled="conectandoPareja">Cancelar</button>
+            <button @click="conectarPareja" :disabled="conectandoPareja" class="px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-50 text-sm transition-colors">
               {{ conectandoPareja ? 'Conectando...' : 'Conectar' }}
             </button>
           </div>
@@ -1099,164 +932,131 @@ const aportarMeta = async (meta) => {
       </div>
     </div>
 
-    <!-- MODAL GASTO -->
-    <div v-if="modal === 'gasto'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+    <!-- MODAL MOVIMIENTO -->
+    <div v-if="modal === 'gasto'" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold text-gray-800">Nuevo Movimiento</h3>
-          <button @click="modal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
-            <X class="w-5 h-5" />
-          </button>
+          <h3 class="text-base font-semibold text-gray-800">Nuevo movimiento</h3>
+          <button @click="modal = false" class="text-gray-400 hover:text-gray-600"><X class="w-5 h-5" /></button>
         </div>
- 
         <form @submit.prevent="save" class="space-y-4">
-          <div class="flex bg-gray-100 p-1 rounded-lg shadow-sm">
-            <button type="button" @click="form.es_ingreso = false" :class="['flex-1 py-1.5 text-sm font-medium rounded-md transition-colors duration-200', !form.es_ingreso ? 'bg-white shadow text-red-600' : 'text-gray-500 hover:text-gray-700']">Egresos / Gastos</button>
-            <button type="button" @click="form.es_ingreso = true" :class="['flex-1 py-1.5 text-sm font-medium rounded-md transition-colors duration-200', form.es_ingreso ? 'bg-white shadow text-emerald-600' : 'text-gray-500 hover:text-gray-700']">Ingresos / Sueldo</button>
+          <div class="flex bg-gray-100 p-1 rounded-xl">
+            <button type="button" @click="form.es_ingreso = false" :class="['flex-1 py-2 text-sm font-semibold rounded-lg transition-colors', !form.es_ingreso ? 'bg-white shadow text-red-600' : 'text-gray-400']">Gasto</button>
+            <button type="button" @click="form.es_ingreso = true" :class="['flex-1 py-2 text-sm font-semibold rounded-lg transition-colors', form.es_ingreso ? 'bg-white shadow text-emerald-600' : 'text-gray-400']">Ingreso</button>
           </div>
-          
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-            <input v-model="form.desc" type="text" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Descripción</label>
+            <input v-model="form.desc" type="text" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500 text-sm" required>
           </div>
- 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-            <input v-model="form.amount" type="number" step="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Monto</label>
+            <input v-model="form.amount" type="number" step="0.01" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500 text-sm" required>
           </div>
- 
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-gray-600 mb-1.5">Categoría</label>
+              <select v-model="form.cat" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500 text-sm">
+                <option v-for="cat in CATS" :key="cat" :value="cat">{{ cat }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-600 mb-1.5">Tipo</label>
+              <select v-model="form.type" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500 text-sm">
+                <option value="individual_mio">Mío</option>
+                <option value="individual_tuyo">De mi pareja</option>
+                <option value="compartido">Compartido</option>
+              </select>
+            </div>
+          </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-            <select v-model="form.cat" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-              <option v-for="cat in CATS" :key="cat" :value="cat">{{ cat }}</option>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Método de pago</label>
+            <select v-model="form.metodoPago" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500 text-sm">
+              <option v-for="m in METODOS_PAGO" :key="m.id" :value="m.id">{{ m.label }}</option>
             </select>
           </div>
- 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-            <select v-model="form.type" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-              <option value="individual_mio">Mío</option>
-              <option value="individual_tuyo">De mi pareja</option>
-              <option value="compartido">Compartido</option>
-            </select>
-          </div>
- 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Método de pago</label>
-            <select v-model="form.metodoPago" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-              <option v-for="metodo in METODOS_PAGO" :key="metodo.id" :value="metodo.id">
-                {{ metodo.label }}
-              </option>
-            </select>
-          </div>
- 
-          <div v-if="form.type === 'compartido' && !form.es_ingreso" class="flex items-center"> 
-            <input v-model="form.split" type="checkbox" class="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+          <div v-if="form.type === 'compartido' && !form.es_ingreso" class="flex items-center gap-2">
+            <input v-model="form.split" type="checkbox" class="h-4 w-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500">
             <label class="text-sm text-gray-700">Dividir 50/50</label>
           </div>
- 
-          <p v-if="formError" class="text-red-600 text-sm bg-red-50 p-3 rounded border border-red-200">{{ formError }}</p>
- 
-          <button type="submit" :disabled="saving" class="w-full bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors duration-200">
-            {{ saving ? 'Guardando...' : 'Guardar Movimiento' }}
+          <p v-if="formError" class="text-red-600 text-xs bg-red-50 p-3 rounded-xl border border-red-200">{{ formError }}</p>
+          <button type="submit" :disabled="saving"
+            class="w-full bg-emerald-600 text-white p-3 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors text-sm font-semibold">
+            {{ saving ? 'Guardando...' : 'Guardar movimiento' }}
           </button>
         </form>
       </div>
     </div>
 
     <!-- MODAL META -->
-    <div v-if="modal === 'meta'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+    <div v-if="modal === 'meta'" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold text-gray-800">Nueva Meta de Ahorro</h3>
-          <button @click="modal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
-            <X class="w-5 h-5" />
-          </button>
+          <h3 class="text-base font-semibold text-gray-800">Nueva meta de ahorro</h3>
+          <button @click="modal = false" class="text-gray-400 hover:text-gray-600"><X class="w-5 h-5" /></button>
         </div>
- 
         <form @submit.prevent="saveMeta" class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Nombre de la meta</label>
-            <input v-model="metaForm.nombre" type="text" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" required>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Nombre de la meta</label>
+            <input v-model="metaForm.nombre" type="text" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500 text-sm" required>
           </div>
- 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Monto objetivo</label>
-            <input v-model="metaForm.montoMeta" type="number" step="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" required>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Monto objetivo</label>
+            <input v-model="metaForm.montoMeta" type="number" step="0.01" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500 text-sm" required>
           </div>
- 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha límite (opcional)</label>
-            <input v-model="metaForm.fechaLimite" type="date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500">
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Fecha límite (opcional)</label>
+            <input v-model="metaForm.fechaLimite" type="date" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-emerald-500 focus:border-emerald-500 text-sm">
           </div>
-
-          <div class="flex items-center"> 
-            <input v-model="metaForm.esCompartida" type="checkbox" class="mr-2 h-4 w-4 text-green-600 border-gray-300 rounded focus:ring-green-500">
-            <label class="text-sm text-gray-700">Meta compartida</label>
-          </div> 
-
-          <button type="submit" :disabled="saving" class="w-full bg-green-500 text-white p-3 rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors duration-200">
-            {{ saving ? 'Guardando...' : 'Crear Meta' }}
+          <div class="flex items-center gap-2">
+            <input v-model="metaForm.esCompartida" type="checkbox" class="h-4 w-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500">
+            <label class="text-sm text-gray-700">Meta compartida con pareja</label>
+          </div>
+          <button type="submit" :disabled="saving"
+            class="w-full bg-emerald-600 text-white p-3 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors text-sm font-semibold">
+            {{ saving ? 'Guardando...' : 'Crear meta' }}
           </button>
         </form>
       </div>
     </div>
 
     <!-- MODAL DEUDA -->
-    <div v-if="modal === 'deuda'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+    <div v-if="modal === 'deuda'" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold text-gray-800">Nueva Deuda</h3>
-          <button @click="modal = false" class="text-gray-500 hover:text-gray-700 transition-colors duration-150">
-            <X class="w-5 h-5" />
-          </button>
+          <h3 class="text-base font-semibold text-gray-800">Nueva deuda</h3>
+          <button @click="modal = false" class="text-gray-400 hover:text-gray-600"><X class="w-5 h-5" /></button>
         </div>
- 
         <form @submit.prevent="saveDeuda" class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-            <input v-model="deudaForm.descripcion" type="text" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500" required>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Descripción</label>
+            <input v-model="deudaForm.descripcion" type="text" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-red-500 focus:border-red-500 text-sm" required>
           </div>
- 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-            <input v-model="deudaForm.monto" type="number" step="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500" required>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Monto total</label>
+            <input v-model="deudaForm.monto" type="number" step="0.01" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-red-500 focus:border-red-500 text-sm" required>
           </div>
- 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha de vencimiento (opcional)</label>
-            <input v-model="deudaForm.fechaVencimiento" type="date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500">
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">Fecha de vencimiento (opcional)</label>
+            <input v-model="deudaForm.fechaVencimiento" type="date" class="w-full p-3 border border-gray-200 rounded-xl focus:ring-red-500 focus:border-red-500 text-sm">
           </div>
-
-          <button type="submit" :disabled="saving" class="w-full bg-red-500 text-white p-3 rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors duration-200">
-            {{ saving ? 'Guardando...' : 'Registrar Deuda' }}
+          <button type="submit" :disabled="saving"
+            class="w-full bg-red-500 text-white p-3 rounded-xl hover:bg-red-600 disabled:opacity-50 transition-colors text-sm font-semibold">
+            {{ saving ? 'Guardando...' : 'Registrar deuda' }}
           </button>
         </form>
       </div>
     </div>
+
   </div>
 </template>
 
 <style>
 @keyframes jump {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  50%       { transform: scale(1.04); }
 }
-.animate-jump {
-  animation: jump 500ms ease-in-out both;
-}
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 250ms ease, transform 250ms ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
-}
-.fade-enter-to,
-.fade-leave-from {
-  opacity: 1;
-  transform: translateY(0);
-}
+.animate-jump { animation: jump 400ms ease-in-out both; }
+.fade-enter-active, .fade-leave-active { transition: opacity 200ms ease, transform 200ms ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(6px); }
+.fade-enter-to, .fade-leave-from { opacity: 1; transform: translateY(0); }
 </style>
