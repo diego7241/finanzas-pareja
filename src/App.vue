@@ -212,6 +212,13 @@ const filtTxns = computed(() => {
 const totalSpent = computed(() => txns.value.filter(t => !t.es_ingreso).reduce((s, t) => s + Number(t.monto), 0))
 const totalDeudas = computed(() => deudas.value.reduce((s, d) => s + (Number(d.monto) - Number(d.monto_pagado || 0)), 0))
 
+const totalGastosMio = computed(() => txns.value.filter(t => !t.es_ingreso && getRelativeType(t) === 'individual_mio').reduce((s, t) => s + Number(t.monto), 0))
+const totalGastosPareja = computed(() => txns.value.filter(t => !t.es_ingreso && getRelativeType(t) === 'individual_tuyo').reduce((s, t) => s + Number(t.monto), 0))
+const totalGastosCompartido = computed(() => txns.value.filter(t => !t.es_ingreso && getRelativeType(t) === 'compartido').reduce((s, t) => s + Number(t.monto), 0))
+const countGastosMio = computed(() => txns.value.filter(t => !t.es_ingreso && getRelativeType(t) === 'individual_mio').length)
+const countGastosPareja = computed(() => txns.value.filter(t => !t.es_ingreso && getRelativeType(t) === 'individual_tuyo').length)
+const countGastosCompartido = computed(() => txns.value.filter(t => !t.es_ingreso && getRelativeType(t) === 'compartido').length)
+
 const donutCategories = computed(() => {
   const map = {}
   txns.value.filter(t => !t.es_ingreso).forEach(t => {
@@ -742,6 +749,23 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                       filt === f ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
                     {{ f === 'all' ? `Todos (${txns.length})` : tLbl(f) }}
                   </button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                  <div class="rounded-3xl border border-emerald-100 bg-emerald-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-emerald-700 font-semibold mb-2">Tú</p>
+                    <p class="text-2xl font-bold text-emerald-800">{{ fmt(totalGastosMio) }}</p>
+                    <p class="text-xs text-emerald-700 mt-1">En {{ countGastosMio }} movimientos</p>
+                  </div>
+                  <div class="rounded-3xl border border-blue-100 bg-blue-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-blue-700 font-semibold mb-2">{{ parejaPerfil?.nombre || 'Pareja' }}</p>
+                    <p class="text-2xl font-bold text-blue-800">{{ fmt(totalGastosPareja) }}</p>
+                    <p class="text-xs text-blue-700 mt-1">En {{ countGastosPareja }} movimientos</p>
+                  </div>
+                  <div class="rounded-3xl border border-amber-100 bg-amber-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-amber-700 font-semibold mb-2">Compartido</p>
+                    <p class="text-2xl font-bold text-amber-800">{{ fmt(totalGastosCompartido) }}</p>
+                    <p class="text-xs text-amber-700 mt-1">En {{ countGastosCompartido }} movimientos</p>
+                  </div>
                 </div>
                 <div v-if="filtTxns.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500 text-sm">
                   Sin movimientos para este filtro.
