@@ -701,7 +701,7 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                             <span class="text-xs text-gray-400">gastado</span>
                           </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div v-for="(item, index) in donutCategories" :key="item.category"
                             class="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2">
                             <span class="w-2.5 h-2.5 rounded-full flex-shrink-0"
@@ -772,25 +772,25 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                 </div>
                 <div v-else class="space-y-2">
                   <div v-for="txn in filtTxns" :key="txn.id"
-                    class="flex items-center justify-between p-3 sm:p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-                    <div class="flex items-center gap-3">
+                    class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
+                    <div class="flex items-start gap-3 min-w-0">
                       <div :class="['w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', CC[txn.categoria]?.bg || 'bg-gray-100']">
                         <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" class="w-5 h-5" :class="CC[txn.categoria]?.tx" />
                       </div>
-                      <div>
-                        <p class="text-sm font-semibold text-gray-800">{{ txn.descripcion }}</p>
-                        <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span class="text-xs text-gray-400">{{ formatDate(txn.creado_en) }}</span>
-                          <span :class="['text-xs px-2 py-0.5 rounded-full font-medium', CC[txn.categoria]?.bg, CC[txn.categoria]?.tx]">{{ txn.categoria }}</span>
-                          <span class="text-xs text-gray-500 font-medium">{{ getQuienHizoGasto(txn) }}</span>
-                          <span v-if="txn.metodo_pago" class="text-xs text-gray-400 flex items-center gap-0.5">
+                      <div class="min-w-0">
+                        <p class="text-sm font-semibold text-gray-800 truncate">{{ txn.descripcion }}</p>
+                        <div class="flex items-center gap-1.5 mt-0.5 flex-wrap text-xs">
+                          <span class="text-gray-400">{{ formatDate(txn.creado_en) }}</span>
+                          <span :class="['px-2 py-0.5 rounded-full font-medium', CC[txn.categoria]?.bg, CC[txn.categoria]?.tx]">{{ txn.categoria }}</span>
+                          <span class="text-gray-500 font-medium">{{ getQuienHizoGasto(txn) }}</span>
+                          <span v-if="txn.metodo_pago" class="text-gray-400 flex items-center gap-0.5">
                             <component :is="METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.icon || DollarSign" class="w-3 h-3" />
                             {{ METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.label }}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-3 justify-between w-full sm:w-auto">
                       <div class="text-right">
                         <p :class="['text-sm font-bold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-500']">
                           {{ txn.es_ingreso ? '+' : '-' }}{{ fmt(txn.monto) }}
