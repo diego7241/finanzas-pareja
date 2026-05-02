@@ -36,11 +36,15 @@ const conectandoPareja = ref(false)
 const activeTab = ref('Resumen')
 const modal = ref(false)
 const filt = ref('all')
+const searchQuery = ref('')
+const selectedCategory = ref('all')
 const formError = ref('')
 const saving = ref(false)
 const loading = ref(false)
 const metaInputs = ref({})
 const deudaInputs = ref({})
+const editingTxn = ref(null)
+const isEditing = computed(() => Boolean(editingTxn.value))
 
 // ==========================================
 // FORMULARIOS
@@ -211,10 +215,56 @@ const sBal = computed(() => {
   return bal
 })
 
-const filtTxns = computed(() => {
-  if (filt.value === 'all') return txns.value
-  return txns.value.filter(t => getRelativeType(t) === filt.value)
+const filteredTxns = computed(() => {
+  let list = txns.value
+  if (filt.value !== 'all') list = list.filter(t => getRelativeType(t) === filt.value)
+  if (selectedCategory.value !== 'all') list = list.filter(t => t.categoria === selectedCategory.value)
+  const search = searchQuery.value.trim().toLowerCase()
+  if (search) {
+    list = list.filter(t => [t.descripcion, t.categoria, t.tipo, t.metodo_pago].some(field => String(field || '').toLowerCase().includes(search)))
+  }
+  return list
 })
+
+const availableCategories = computed(() => {
+  const cats = new Set()
+  txns.value.filter(t => filt.value === 'all' || getRelativeType(t) === filt.value)
+    .forEach(t => cats.add(t.categoria || 'Otros'))
+  return Array.from(cats).sort((a, b) => a.localeCompare(b, 'es-PE'))
+})
+
+const getDateSection = (dateStr) => {
+  const d = new Date(dateStr)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const day = new Date(d)
+  day.setHours(0, 0, 0, 0)
+  const diff = Math.round((today - day) / 86400000)
+  if (diff === 0) return 'Hoy'
+  if (diff === 1) return 'Ayer'
+  if (diff > 1 && diff < 7) return new Intl.DateTimeFormat('es-PE', { weekday: 'short' }).format(d)
+  return `${d.getDate()} ${['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()]}`
+}
+
+const groupedTxns = computed(() => {
+  const sections = {}
+  filteredTxns.value.forEach(txn => {
+    const label = getDateSection(txn.creado_en)
+    sections[label] = sections[label] || []
+    sections[label].push(txn)
+  })
+  return Object.entries(sections).map(([label, items]) => ({ label, items }))
+})
+
+const hasActiveFilters = computed(() => filt.value !== 'all' || selectedCategory.value !== 'all' || searchQuery.value.trim() !== '')
+
+const searchCount = computed(() => filteredTxns.value.length)
+
+const clearAllFilters = () => {
+  filt.value = 'all'
+  selectedCategory.value = 'all'
+  searchQuery.value = ''
+}
 
 // FIX: retorna número, no string
 const totalSpent = computed(() => txns.value.filter(t => !t.es_ingreso).reduce((s, t) => s + Number(t.monto), 0))
@@ -223,15 +273,19 @@ const totalDeudas = computed(() => deudas.value.reduce((s, d) => s + (Number(d.m
 // Un solo computed que calcula todo de una pasada
 const statsMovimientos = computed(() => {
   const tipos = ['individual_mio', 'individual_tuyo', 'compartido']
-  const stats = Object.fromEntries(tipos.map(t => [t, { gastos: 0, ingresos: 0, count: 0, catMap: {} }]))
+  const stats = Object.fromEntries(tipos.map(t => [t, { gastos: 0, ingresos: 0, neto: 0, count: 0, debtPaid: 0, catMap: {} }]))
   txns.value.forEach(t => {
     const tipo = getRelativeType(t)
     if (!stats[tipo]) return
     const monto = Number(t.monto)
     if (t.es_ingreso) {
       stats[tipo].ingresos += monto
+      stats[tipo].neto += monto
+    } else if (isDebtPayment(t)) {
+      stats[tipo].debtPaid += monto
     } else {
       stats[tipo].gastos += monto
+      stats[tipo].neto -= monto
       stats[tipo].count++
       stats[tipo].catMap[t.categoria] = (stats[tipo].catMap[t.categoria] || 0) + monto
     }
@@ -239,6 +293,7 @@ const statsMovimientos = computed(() => {
   Object.values(stats).forEach(s => {
     const entries = Object.entries(s.catMap).sort((a, b) => b[1] - a[1])
     s.topCat = entries[0] ? { nombre: entries[0][0], monto: entries[0][1] } : null
+    s.showWarning = s.topCat?.nombre === 'Otros' && s.gastos > 0
   })
   return stats
 })
@@ -248,6 +303,7 @@ const donutCategories = computed(() => {
   txns.value
     .filter(t => {
       if (t.es_ingreso) return false
+      if (isDebtPayment(t)) return false
       if (donutView.value === 'mio') return t.perfil_id === miPerfil.value?.id
       if (donutView.value === 'pareja') return parejaPerfil.value && t.perfil_id === parejaPerfil.value.id
       return true // 'todos'
@@ -363,6 +419,10 @@ const getQuienHizoGasto = (txn) => {
   return 'Desconocido'
 }
 
+const isDebtPayment = (txn) => {
+  return String(txn.descripcion || '').toLowerCase().startsWith('abono a deuda:')
+}
+
 // Mapa de colores por categoría
 const CC = {
   'Alimentación':    { bg: 'bg-orange-100',  tx: 'text-orange-700' },
@@ -389,11 +449,38 @@ const tLbl = t => TL[t] || t
 // ACCIONES
 // ==========================================
 const openModal = (tipo = 'gasto') => {
-  if (tipo === 'gasto') form.value = { desc: '', amount: '', cat: 'Otros', type: 'individual_mio', split: false, metodoPago: 'efectivo', es_ingreso: false }
-  else if (tipo === 'meta') metaForm.value = { nombre: '', montoMeta: '', esCompartida: true, fechaLimite: '' }
-  else if (tipo === 'deuda') deudaForm.value = { descripcion: '', monto: '', fechaVencimiento: '' }
+  if (tipo === 'gasto') {
+    editingTxn.value = null
+    form.value = { id: null, desc: '', amount: '', cat: 'Otros', type: 'individual_mio', split: false, metodoPago: 'efectivo', es_ingreso: false }
+  } else if (tipo === 'meta') {
+    metaForm.value = { nombre: '', montoMeta: '', esCompartida: true, fechaLimite: '' }
+  } else if (tipo === 'deuda') {
+    deudaForm.value = { descripcion: '', monto: '', fechaVencimiento: '' }
+  }
   formError.value = ''
   modal.value = tipo
+}
+
+const openEditModal = (txn) => {
+  editingTxn.value = txn
+  form.value = {
+    id: txn.id,
+    desc: txn.descripcion,
+    amount: txn.monto,
+    cat: txn.categoria || 'Otros',
+    type: txn.tipo,
+    split: txn.dividir_50,
+    metodoPago: txn.metodo_pago || 'efectivo',
+    es_ingreso: txn.es_ingreso
+  }
+  formError.value = ''
+  modal.value = 'gasto'
+}
+
+const closeModal = () => {
+  modal.value = false
+  editingTxn.value = null
+  formError.value = ''
 }
 
 const save = async () => {
@@ -402,12 +489,21 @@ const save = async () => {
   const amt = parseFloat(form.value.amount)
   if (isNaN(amt) || amt <= 0) { formError.value = 'Monto inválido'; return }
   saving.value = true
-  const { error } = await supabase.from('transacciones').insert({
-    descripcion: form.value.desc.trim(), monto: amt, categoria: form.value.cat,
-    tipo: form.value.type, dividir_50: form.value.split, es_ingreso: form.value.es_ingreso,
-    metodo_pago: form.value.metodoPago, perfil_id: miPerfil.value.id
-  })
-  if (error) { formError.value = error.message } else { modal.value = false; await cargarGastos() }
+  if (editingTxn.value) {
+    const { error } = await supabase.from('transacciones').update({
+      descripcion: form.value.desc.trim(), monto: amt, categoria: form.value.cat,
+      tipo: form.value.type, dividir_50: form.value.split, es_ingreso: form.value.es_ingreso,
+      metodo_pago: form.value.metodoPago
+    }).eq('id', editingTxn.value.id)
+    if (error) { formError.value = error.message } else { closeModal(); await cargarGastos() }
+  } else {
+    const { error } = await supabase.from('transacciones').insert({
+      descripcion: form.value.desc.trim(), monto: amt, categoria: form.value.cat,
+      tipo: form.value.type, dividir_50: form.value.split, es_ingreso: form.value.es_ingreso,
+      metodo_pago: form.value.metodoPago, perfil_id: miPerfil.value.id
+    })
+    if (error) { formError.value = error.message } else { closeModal(); await cargarGastos() }
+  }
   saving.value = false
 }
 
@@ -828,116 +924,180 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
 
               <!-- MOVIMIENTOS -->
               <div v-if="activeTab === 'Movimientos'">
-                <div class="flex justify-between items-center mb-4">
-                  <h2 class="text-base font-semibold text-gray-800">Historial de movimientos</h2>
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+                  <div>
+                    <h2 class="text-base font-semibold text-gray-800">Historial de movimientos</h2>
+                    <p class="text-sm text-gray-500 mt-1">Busca, filtra por persona o categoría, y agrupa tu historial por fecha.</p>
+                  </div>
                   <button @click="openModal('gasto')"
                     class="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors text-sm">
                     <Plus class="w-4 h-4" />Nuevo
                   </button>
                 </div>
-                <div class="flex gap-2 mb-4 flex-wrap">
-                  <button v-for="f in ['all', 'individual_mio', 'individual_tuyo', 'compartido']" :key="f"
-                    @click="filt = f"
-                    :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
-                      filt === f ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
-                    {{ f === 'all' ? `Todos (${txns.length})` : tLbl(f) }}
-                  </button>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                  <!-- Tarjeta Mío -->
-                  <div @click="filt = 'individual_mio'"
-                    :class="['rounded-2xl border p-4 cursor-pointer transition-all duration-200',
-                      filt === 'individual_mio'
-                        ? 'border-emerald-400 bg-emerald-50 shadow-md ring-2 ring-emerald-200'
-                        : 'border-emerald-100 bg-emerald-50 hover:shadow-sm']">
-                    <p class="text-xs uppercase tracking-widest text-emerald-700 font-semibold mb-2">
+
+                <div class="grid gap-4 mb-4">
+                  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <label class="relative w-full sm:w-[min(420px,100%)]">
+                      <input v-model="searchQuery" type="search" placeholder="Buscar movimiento, categoría o método..."
+                        class="w-full pl-4 pr-10 py-3 border border-gray-200 rounded-2xl focus:ring-emerald-500 focus:border-emerald-500 text-sm" />
+                      <button v-if="searchQuery" @click.prevent="searchQuery = ''" type="button"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors">
+                        <X class="w-4 h-4" />
+                      </button>
+                    </label>
+                    <div class="text-sm text-gray-500">
+                      <span v-if="hasActiveFilters">Resultados: {{ searchCount }}</span>
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2 items-center">
+                    <button @click="filt = 'all'" :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors', filt === 'all' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
+                      Todos ({{ txns.length }})
+                    </button>
+                    <button @click="filt = 'individual_mio'" :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors', filt === 'individual_mio' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
                       {{ miPerfil?.nombre || 'Tú' }}
-                    </p>
-                    <p class="text-2xl font-bold text-emerald-800">{{ fmt(statsMovimientos['individual_mio'].gastos) }}</p>
-                    <p class="text-xs text-emerald-600 mt-1">
-                      {{ statsMovimientos['individual_mio'].count }} gastos
-                      <span v-if="statsMovimientos['individual_mio'].ingresos > 0">
-                        · +{{ fmt(statsMovimientos['individual_mio'].ingresos) }} ingresos
-                      </span>
-                    </p>
-                    <p v-if="statsMovimientos['individual_mio'].topCat" class="text-xs text-emerald-500 mt-1 truncate">
-                      Más en {{ statsMovimientos['individual_mio'].topCat.nombre }}
-                    </p>
-                  </div>
-                  <!-- Tarjeta Pareja -->
-                  <div @click="filt = 'individual_tuyo'"
-                    :class="['rounded-2xl border p-4 cursor-pointer transition-all duration-200',
-                      filt === 'individual_tuyo'
-                        ? 'border-blue-400 bg-blue-50 shadow-md ring-2 ring-blue-200'
-                        : 'border-blue-100 bg-blue-50 hover:shadow-sm']">
-                    <p class="text-xs uppercase tracking-widest text-blue-700 font-semibold mb-2">
+                    </button>
+                    <button @click="filt = 'individual_tuyo'" :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors', filt === 'individual_tuyo' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
                       {{ parejaPerfil?.nombre || 'Pareja' }}
+                    </button>
+                    <button @click="filt = 'compartido'" :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors', filt === 'compartido' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
+                      Compartido
+                    </button>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2 items-center">
+                    <span class="text-xs text-gray-500">Categorías:</span>
+                    <button @click="selectedCategory = 'all'" :class="['px-2.5 py-1 rounded-full text-xs font-semibold transition-colors', selectedCategory === 'all' ? 'bg-slate-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
+                      Todas
+                    </button>
+                    <button v-for="cat in availableCategories" :key="cat" @click="selectedCategory = cat"
+                      :class="['px-2.5 py-1 rounded-full text-xs font-semibold transition-colors', selectedCategory === cat ? 'bg-slate-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
+                      {{ cat }}
+                    </button>
+                  </div>
+
+                  <div v-if="hasActiveFilters" class="text-xs text-slate-500">
+                    <button @click="clearAllFilters" class="font-semibold text-emerald-600 hover:text-emerald-700">Limpiar filtros</button>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                  <div @click="filt = 'individual_mio'"
+                    :class="['rounded-2xl border p-4 cursor-pointer transition-all duration-200', filt === 'individual_mio' ? 'border-emerald-400 bg-emerald-50 shadow-md ring-2 ring-emerald-200' : 'border-emerald-100 bg-emerald-50 hover:shadow-sm']">
+                    <p class="text-xs uppercase tracking-widest text-emerald-700 font-semibold mb-2">{{ miPerfil?.nombre || 'Tú' }}</p>
+                    <p :class="['text-2xl font-bold', statsMovimientos['individual_mio'].neto >= 0 ? 'text-emerald-800' : 'text-red-600']">
+                      {{ statsMovimientos['individual_mio'].neto >= 0 ? '+' : '-' }}{{ fmt(Math.abs(statsMovimientos['individual_mio'].neto)) }}
                     </p>
-                    <p class="text-2xl font-bold text-blue-800">{{ fmt(statsMovimientos['individual_tuyo'].gastos) }}</p>
-                    <p class="text-xs text-blue-600 mt-1">
-                      {{ statsMovimientos['individual_tuyo'].count }} gastos
-                      <span v-if="statsMovimientos['individual_tuyo'].ingresos > 0">
-                        · +{{ fmt(statsMovimientos['individual_tuyo'].ingresos) }} ingresos
-                      </span>
+                    <p class="text-xs text-gray-500 mt-1">
+                      Neto · {{ statsMovimientos['individual_mio'].count }} gastos
+                      <span v-if="statsMovimientos['individual_mio'].debtPaid > 0">· {{ fmt(statsMovimientos['individual_mio'].debtPaid) }} deuda</span>
+                      <span v-if="statsMovimientos['individual_mio'].ingresos > 0">· +{{ fmt(statsMovimientos['individual_mio'].ingresos) }} ingresos</span>
                     </p>
-                    <p v-if="statsMovimientos['individual_tuyo'].topCat" class="text-xs text-blue-500 mt-1 truncate">
-                      Más en {{ statsMovimientos['individual_tuyo'].topCat.nombre }}
+                    <p class="text-xs text-emerald-500 mt-1 truncate">
+                      {{ statsMovimientos['individual_mio'].topCat ? `Más en ${statsMovimientos['individual_mio'].topCat.nombre}` : 'Sin categoría principal' }}
+                    </p>
+                    <p v-if="statsMovimientos['individual_mio'].showWarning" class="text-[11px] text-orange-600 mt-2 font-semibold">
+                      ⚠️ Muchos gastos en Otros
                     </p>
                   </div>
-                  <!-- Tarjeta Compartido -->
-                  <div @click="filt = 'compartido'"
-                    :class="['rounded-2xl border p-4 cursor-pointer transition-all duration-200',
-                      filt === 'compartido'
-                        ? 'border-amber-400 bg-amber-50 shadow-md ring-2 ring-amber-200'
-                        : 'border-amber-100 bg-amber-50 hover:shadow-sm']">
-                    <p class="text-xs uppercase tracking-widest text-amber-700 font-semibold mb-2">Compartido</p>
-                    <p class="text-2xl font-bold text-amber-800">{{ fmt(statsMovimientos['compartido'].gastos) }}</p>
-                    <p class="text-xs text-amber-600 mt-1">
-                      {{ statsMovimientos['compartido'].count }} gastos
-                      <span v-if="statsMovimientos['compartido'].ingresos > 0">
-                        · +{{ fmt(statsMovimientos['compartido'].ingresos) }} ingresos
-                      </span>
+
+                  <div @click="filt = 'individual_tuyo'"
+                    :class="['rounded-2xl border p-4 cursor-pointer transition-all duration-200', filt === 'individual_tuyo' ? 'border-blue-400 bg-blue-50 shadow-md ring-2 ring-blue-200' : 'border-blue-100 bg-blue-50 hover:shadow-sm']">
+                    <p class="text-xs uppercase tracking-widest text-blue-700 font-semibold mb-2">{{ parejaPerfil?.nombre || 'Pareja' }}</p>
+                    <p :class="['text-2xl font-bold', statsMovimientos['individual_tuyo'].neto >= 0 ? 'text-blue-800' : 'text-red-600']">
+                      {{ statsMovimientos['individual_tuyo'].neto >= 0 ? '+' : '-' }}{{ fmt(Math.abs(statsMovimientos['individual_tuyo'].neto)) }}
                     </p>
-                    <p v-if="statsMovimientos['compartido'].topCat" class="text-xs text-amber-500 mt-1 truncate">
-                      Más en {{ statsMovimientos['compartido'].topCat.nombre }}
+                    <p class="text-xs text-gray-500 mt-1">
+                      Neto · {{ statsMovimientos['individual_tuyo'].count }} gastos
+                      <span v-if="statsMovimientos['individual_tuyo'].debtPaid > 0">· {{ fmt(statsMovimientos['individual_tuyo'].debtPaid) }} deuda</span>
+                      <span v-if="statsMovimientos['individual_tuyo'].ingresos > 0">· +{{ fmt(statsMovimientos['individual_tuyo'].ingresos) }} ingresos</span>
+                    </p>
+                    <p class="text-xs text-blue-500 mt-1 truncate">
+                      {{ statsMovimientos['individual_tuyo'].topCat ? `Más en ${statsMovimientos['individual_tuyo'].topCat.nombre}` : 'Sin categoría principal' }}
+                    </p>
+                    <p v-if="statsMovimientos['individual_tuyo'].showWarning" class="text-[11px] text-orange-600 mt-2 font-semibold">
+                      ⚠️ Muchos gastos en Otros
+                    </p>
+                  </div>
+
+                  <div @click="filt = 'compartido'"
+                    :class="['rounded-2xl border p-4 cursor-pointer transition-all duration-200', filt === 'compartido' ? 'border-amber-400 bg-amber-50 shadow-md ring-2 ring-amber-200' : 'border-amber-100 bg-amber-50 hover:shadow-sm']">
+                    <p class="text-xs uppercase tracking-widest text-amber-700 font-semibold mb-2">Compartido</p>
+                    <p :class="['text-2xl font-bold', statsMovimientos['compartido'].neto >= 0 ? 'text-amber-800' : 'text-red-600']">
+                      {{ statsMovimientos['compartido'].neto >= 0 ? '+' : '-' }}{{ fmt(Math.abs(statsMovimientos['compartido'].neto)) }}
+                    </p>
+                    <p class="text-xs text-gray-500 mt-1">
+                      Neto · {{ statsMovimientos['compartido'].count }} gastos
+                      <span v-if="statsMovimientos['compartido'].debtPaid > 0">· {{ fmt(statsMovimientos['compartido'].debtPaid) }} deuda</span>
+                      <span v-if="statsMovimientos['compartido'].ingresos > 0">· +{{ fmt(statsMovimientos['compartido'].ingresos) }} ingresos</span>
+                    </p>
+                    <p class="text-xs text-amber-500 mt-1 truncate">
+                      {{ statsMovimientos['compartido'].topCat ? `Más en ${statsMovimientos['compartido'].topCat.nombre}` : 'Sin categoría principal' }}
+                    </p>
+                    <p v-if="statsMovimientos['compartido'].showWarning" class="text-[11px] text-orange-600 mt-2 font-semibold">
+                      ⚠️ Muchos gastos en Otros
                     </p>
                   </div>
                 </div>
-                <div v-if="filtTxns.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500 text-sm">
+
+                <div v-if="filteredTxns.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500 text-sm">
                   Sin movimientos para este filtro.
                 </div>
-                <div v-else class="space-y-2">
-                  <div v-for="txn in filtTxns" :key="txn.id"
-                    class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-                    <div class="flex items-start gap-3 min-w-0">
-                      <div :class="['w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', CC[txn.categoria]?.bg || 'bg-gray-100']">
-                        <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" class="w-5 h-5" :class="CC[txn.categoria]?.tx" />
-                      </div>
-                      <div class="min-w-0">
-                        <p class="text-sm font-semibold text-gray-800 truncate">{{ txn.descripcion }}</p>
-                        <div class="flex items-center gap-1.5 mt-0.5 flex-wrap text-xs">
-                          <span class="text-gray-400">{{ formatDate(txn.creado_en) }}</span>
-                          <span :class="['px-2 py-0.5 rounded-full font-medium', CC[txn.categoria]?.bg, CC[txn.categoria]?.tx]">{{ txn.categoria }}</span>
-                          <span class="text-gray-500 font-medium">{{ getQuienHizoGasto(txn) }}</span>
-                          <span v-if="txn.metodo_pago" class="text-gray-400 flex items-center gap-0.5">
-                            <component :is="METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.icon || DollarSign" class="w-3 h-3" />
-                            {{ METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.label }}
-                          </span>
-                        </div>
+
+                <div v-else class="space-y-6">
+                  <div v-for="section in groupedTxns" :key="section.label" class="space-y-3">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <p class="text-sm font-semibold text-gray-700">{{ section.label }}</p>
+                        <p class="text-xs text-gray-400">{{ section.items.length }} movimiento{{ section.items.length === 1 ? '' : 's' }}</p>
                       </div>
                     </div>
-                    <div class="flex items-center gap-3 justify-between w-full sm:w-auto">
-                      <div class="text-right">
-                        <p :class="['text-sm font-bold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-500']">
-                          {{ txn.es_ingreso ? '+' : '-' }}{{ fmt(txn.monto) }}
-                        </p>
-                        <span :class="['text-xs px-2 py-0.5 rounded-full font-medium', tBg(getRelativeType(txn)), tTx(getRelativeType(txn))]">
-                          {{ tLbl(getRelativeType(txn)) }}
-                        </span>
+
+                    <div class="space-y-2">
+                      <div v-for="txn in section.items" :key="txn.id"
+                        class="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition-colors">
+                        <div class="flex items-start gap-3 min-w-0">
+                          <div :class="['w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0', CC[txn.categoria]?.bg || 'bg-gray-100']">
+                            <component :is="txn.es_ingreso ? ArrowUpCircle : ArrowDownCircle" class="w-5 h-5" :class="CC[txn.categoria]?.tx" />
+                          </div>
+                          <div class="min-w-0">
+                            <div class="flex items-center gap-2 mb-1 flex-wrap">
+                            <p class="text-sm font-semibold text-gray-800 truncate">{{ txn.descripcion }}</p>
+                            <span v-if="isDebtPayment(txn)" class="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
+                              Pago deuda
+                            </span>
+                          </div>
+                          <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-500">
+                            <span>{{ formatDate(txn.creado_en) }}</span>
+                            <span :class="['px-2 py-0.5 rounded-full font-medium', CC[txn.categoria]?.bg, CC[txn.categoria]?.tx]">{{ txn.categoria }}</span>
+                            <span>{{ getQuienHizoGasto(txn) }}</span>
+                            <span v-if="txn.metodo_pago" class="flex items-center gap-1 text-gray-400">
+                                <component :is="METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.icon || DollarSign" class="w-3.5 h-3.5" />
+                                {{ METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.label }}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 justify-between w-full sm:w-auto">
+                          <div class="text-right">
+                            <p :class="['text-sm font-bold', txn.es_ingreso ? 'text-emerald-600' : 'text-red-500']">
+                              {{ txn.es_ingreso ? '+' : '-' }}{{ fmt(txn.monto) }}
+                            </p>
+                            <span :class="['text-xs px-2 py-0.5 rounded-full font-medium', tBg(getRelativeType(txn)), tTx(getRelativeType(txn))]">
+                              {{ tLbl(getRelativeType(txn)) }}
+                            </span>
+                          </div>
+                          <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <button v-if="txn.perfil_id === miPerfil?.id" @click.prevent="openEditModal(txn)" type="button" class="text-slate-600 hover:text-slate-900">
+                              <Edit class="w-4 h-4" />
+                            </button>
+                            <button v-if="txn.perfil_id === miPerfil?.id" @click.prevent="deleteTxn(txn.id)" type="button" class="text-red-400 hover:text-red-600">
+                              <Trash2 class="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <button v-if="txn.perfil_id === miPerfil?.id" @click="deleteTxn(txn.id)" class="text-red-400 hover:text-red-600 transition-colors">
-                        <Trash2 class="w-4 h-4" />
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -1096,8 +1256,8 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
     <div v-if="modal === 'gasto'" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-base font-semibold text-gray-800">Nuevo movimiento</h3>
-          <button @click="modal = false" class="text-gray-400 hover:text-gray-600"><X class="w-5 h-5" /></button>
+          <h3 class="text-base font-semibold text-gray-800">{{ editingTxn ? 'Editar movimiento' : 'Nuevo movimiento' }}</h3>
+          <button @click="closeModal" class="text-gray-400 hover:text-gray-600"><X class="w-5 h-5" /></button>
         </div>
         <form @submit.prevent="save" class="space-y-4">
           <div class="flex bg-gray-100 p-1 rounded-xl">
@@ -1141,7 +1301,7 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
           <p v-if="formError" class="text-red-600 text-xs bg-red-50 p-3 rounded-xl border border-red-200">{{ formError }}</p>
           <button type="submit" :disabled="saving"
             class="w-full bg-emerald-600 text-white p-3 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition-colors text-sm font-semibold">
-            {{ saving ? 'Guardando...' : 'Guardar movimiento' }}
+            {{ saving ? 'Guardando...' : editingTxn ? 'Guardar cambios' : 'Guardar movimiento' }}
           </button>
         </form>
       </div>
