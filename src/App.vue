@@ -267,7 +267,7 @@ const clearAllFilters = () => {
 }
 
 // FIX: retorna número, no string
-const totalSpent = computed(() => txns.value.filter(t => !t.es_ingreso && !isDebtPayment(t)).reduce((s, t) => s + Number(t.monto), 0))
+const totalSpent = computed(() => txns.value.filter(t => !t.es_ingreso).reduce((s, t) => s + Number(t.monto), 0))
 const totalDeudas = computed(() => deudas.value.reduce((s, d) => s + (Number(d.monto) - Number(d.monto_pagado || 0)), 0))
 
 // Un solo computed que calcula todo de una pasada
@@ -283,7 +283,6 @@ const statsMovimientos = computed(() => {
       stats[tipo].neto += monto
     } else if (isDebtPayment(t)) {
       stats[tipo].debtPaid += monto
-      stats[tipo].neto -= monto
     } else {
       stats[tipo].gastos += monto
       stats[tipo].neto -= monto
@@ -317,9 +316,9 @@ const donutCategories = computed(() => {
 
 // Totales por persona para la barra comparativa
 const spendingComparativa = computed(() => {
-  const mio = txns.value.filter(t => !t.es_ingreso && !isDebtPayment(t) && t.perfil_id === miPerfil.value?.id)
+  const mio = txns.value.filter(t => !t.es_ingreso && t.perfil_id === miPerfil.value?.id)
     .reduce((s, t) => s + Number(t.monto), 0)
-  const pareja = txns.value.filter(t => !t.es_ingreso && !isDebtPayment(t) && parejaPerfil.value && t.perfil_id === parejaPerfil.value.id)
+  const pareja = txns.value.filter(t => !t.es_ingreso && parejaPerfil.value && t.perfil_id === parejaPerfil.value.id)
     .reduce((s, t) => s + Number(t.monto), 0)
   const total = mio + pareja || 1
   return { mio, pareja, pctMio: Math.round((mio / total) * 100), pctPareja: Math.round((pareja / total) * 100) }
@@ -341,7 +340,7 @@ const greetingEmoji = computed(() => {
 
 // Banner dinámico con insight real
 const insightBanner = computed(() => {
-  const gastos = txns.value.filter(t => !t.es_ingreso && !isDebtPayment(t))
+  const gastos = txns.value.filter(t => !t.es_ingreso)
   if (txns.value.length === 0) return 'Sin movimientos aún → registra el primero ↗'
   if (gastos.length === 0) return 'Solo ingresos registrados → ver historial ↗'
   const topCat = gastos.reduce((acc, t) => { acc[t.categoria] = (acc[t.categoria] || 0) + Number(t.monto); return acc }, {})
@@ -395,21 +394,6 @@ const formatDate = (dateStr) => {
 }
 const pctDeuda = d => Math.min(100, Math.round(((d.monto_pagado || 0) / d.monto) * 100))
 const pct = g => Math.min(100, Math.round(g.monto_actual / g.monto_meta * 100))
-
-const sharedGoalSuggestion = (goal) => {
-  if (!goal.es_compartida) return null
-  const remaining = Math.max(0, Number(goal.monto_meta) - Number(goal.monto_actual))
-  if (remaining <= 0) return null
-  const now = new Date()
-  let months = 2
-  if (goal.fecha_limite) {
-    const due = new Date(goal.fecha_limite)
-    const diffMs = due - now
-    months = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30)))
-  }
-  const suggestion = Math.max(1, Math.round(remaining / (months * 2)))
-  return `S/ ${suggestion.toLocaleString('es-PE')} cada uno este mes`
-}
 
 // FIX: iniciales inteligentes — "Diego Mendoza" → "DM", nombre simple → "DIE"
 const getInitials = (nombre) => {
@@ -1160,10 +1144,6 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                           <span class="text-[10px] text-gray-400">avance</span>
                         </div>
                       </div>
-                    </div>
-                    <div v-if="sharedGoalSuggestion(goal)" class="mb-3 rounded-2xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800">
-                      <p class="font-semibold">¿Y si ahorran juntos?</p>
-                      <p>{{ sharedGoalSuggestion(goal) }}</p>
                     </div>
                     <div class="flex justify-between text-xs text-gray-500 mb-3">
                       <span>{{ fmt(goal.monto_actual) }}</span>
