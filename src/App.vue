@@ -66,6 +66,7 @@ const goals = ref([])
 const deudas = ref([])
 const donutCanvas = ref(null)
 let donutChart = null
+const donutView = ref('todos') // 'todos' | 'mio' | 'pareja'
 
 const myBalAnimating = ref(false)
 const pBalAnimating = ref(false)
@@ -186,11 +187,18 @@ const myBal = computed(() => {
 })
 
 const pBal = computed(() => {
-  let bal = parejaPerfil.value ? parejaPerfil.value.saldo_inicial_mio : (miPerfil.value?.saldo_inicial_pareja || 0)
-  txns.value.filter(t =>
-    (parejaPerfil.value && t.perfil_id === parejaPerfil.value.id && t.tipo === 'individual_mio') ||
-    (t.perfil_id === miPerfil.value?.id && t.tipo === 'individual_tuyo')
-  ).forEach(t => { bal += t.es_ingreso ? Number(t.monto) : -Number(t.monto) })
+  // SOLO usamos las transacciones que la pareja registró ella misma (individual_mio)
+  // Excluimos "individual_tuyo" registradas por el usuario actual porque crean
+  // una asimetría: Diego ve 117, Diana ve 152 — ahora ambos verán el mismo número.
+  let bal = parejaPerfil.value
+    ? (parejaPerfil.value.saldo_inicial_mio || 0)
+    : (miPerfil.value?.saldo_inicial_pareja || 0)
+
+  if (parejaPerfil.value) {
+    txns.value
+      .filter(t => t.perfil_id === parejaPerfil.value.id && t.tipo === 'individual_mio')
+      .forEach(t => { bal += t.es_ingreso ? Number(t.monto) : -Number(t.monto) })
+  }
   return bal
 })
 
@@ -237,10 +245,27 @@ const statsMovimientos = computed(() => {
 
 const donutCategories = computed(() => {
   const map = {}
-  txns.value.filter(t => !t.es_ingreso).forEach(t => {
-    map[t.categoria] = (map[t.categoria] || 0) + Number(t.monto)
-  })
+  txns.value
+    .filter(t => {
+      if (t.es_ingreso) return false
+      if (donutView.value === 'mio') return t.perfil_id === miPerfil.value?.id
+      if (donutView.value === 'pareja') return parejaPerfil.value && t.perfil_id === parejaPerfil.value.id
+      return true // 'todos'
+    })
+    .forEach(t => {
+      map[t.categoria] = (map[t.categoria] || 0) + Number(t.monto)
+    })
   return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount)
+})
+
+// Totales por persona para la barra comparativa
+const spendingComparativa = computed(() => {
+  const mio = txns.value.filter(t => !t.es_ingreso && t.perfil_id === miPerfil.value?.id)
+    .reduce((s, t) => s + Number(t.monto), 0)
+  const pareja = txns.value.filter(t => !t.es_ingreso && parejaPerfil.value && t.perfil_id === parejaPerfil.value.id)
+    .reduce((s, t) => s + Number(t.monto), 0)
+  const total = mio + pareja || 1
+  return { mio, pareja, pctMio: Math.round((mio / total) * 100), pctPareja: Math.round((pareja / total) * 100) }
 })
 
 // FIX: hora reactiva — se actualiza cada minuto, no se congela al cargar
@@ -291,8 +316,8 @@ const renderDonut = () => {
   })
 }
 
-// FIX: también vigila `loading` para renderizar cuando termina de cargar
-watch([txns, activeTab, loading], async ([, tab, isLoading]) => {
+// Vigila txns, tab, loading Y donutView para re-renderizar al cambiar de vista
+watch([txns, activeTab, loading, donutView], async ([, tab, isLoading]) => {
   if (tab === 'Resumen' && !isLoading) {
     await nextTick()
     renderDonut()
@@ -632,7 +657,7 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div :class="['transform-gpu rounded-2xl border p-5 flex items-center justify-between', myBalAnimating ? 'animate-jump' : '', 'border-emerald-200 bg-gradient-to-br from-white to-emerald-50']">
             <div>
-              <p class="text-xs text-gray-500 font-medium mb-1">Tu saldo</p>
+              <p class="text-xs text-gray-500 font-medium mb-1">{{ miPerfil?.nombre || 'Tu saldo' }}</p>
               <p class="text-2xl font-bold text-emerald-600">{{ fmt(myBal) }}</p>
             </div>
             <div class="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -707,23 +732,75 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
 
                   <div>
                     <div class="p-4 rounded-2xl border border-slate-100 bg-white mb-5">
-                      <h3 class="text-base font-semibold mb-4 text-gray-800">Gastos por categoría</h3>
-                      <div v-if="donutCategories.length === 0" class="text-center py-6 text-sm text-gray-400">Sin gastos registrados aún</div>
+                      <!-- Header con título y tabs de vista -->
+                      <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-base font-semibold text-gray-800">Gastos por categoría</h3>
+                        <div class="flex gap-1 bg-gray-100 p-1 rounded-xl">
+                          <button v-for="v in [{id:'todos',label:'Ambos'},{id:'mio',label:miPerfil?.nombre||'Mío'},{id:'pareja',label:parejaPerfil?.nombre||'Pareja'}]"
+                            :key="v.id" @click="donutView = v.id"
+                            :class="['px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors',
+                              donutView === v.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700']">
+                            {{ v.label }}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div v-if="donutCategories.length === 0" class="text-center py-8 text-sm text-gray-400">
+                        Sin gastos registrados para esta vista
+                      </div>
                       <div v-else>
-                        <div class="relative w-44 h-44 mx-auto mb-4">
+                        <!-- Donut -->
+                        <div class="relative w-40 h-40 mx-auto mb-4">
                           <canvas ref="donutCanvas" class="w-full h-full"></canvas>
                           <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <span class="text-base font-bold text-slate-900">{{ fmt(totalSpent) }}</span>
-                            <span class="text-xs text-gray-400">gastado</span>
+                            <span class="text-sm font-bold text-slate-900">{{ fmt(donutCategories.reduce((s,i)=>s+i.amount,0)) }}</span>
+                            <span class="text-[10px] text-gray-400">
+                              {{ donutView === 'todos' ? 'entre los dos' : donutView === 'mio' ? miPerfil?.nombre : parejaPerfil?.nombre }}
+                            </span>
                           </div>
                         </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+
+                        <!-- Leyenda -->
+                        <div class="grid grid-cols-1 gap-1.5 mb-4">
                           <div v-for="(item, index) in donutCategories" :key="item.category"
-                            class="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2">
+                            class="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 transition-colors">
                             <span class="w-2.5 h-2.5 rounded-full flex-shrink-0"
                               :style="{ backgroundColor: ['#f97316','#3b82f6','#8b5cf6','#ec4899','#eab308','#059669','#6b7280'][index] }"></span>
-                            <span class="text-xs text-slate-600 flex-1 truncate">{{ item.category }}</span>
-                            <span class="text-xs font-semibold text-slate-800">{{ fmt(item.amount) }}</span>
+                            <span class="text-xs text-slate-600 flex-1">{{ item.category }}</span>
+                            <div class="flex items-center gap-2">
+                              <div class="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full rounded-full"
+                                  :style="{ width: Math.round((item.amount / donutCategories.reduce((s,i)=>s+i.amount,0)) * 100) + '%',
+                                    backgroundColor: ['#f97316','#3b82f6','#8b5cf6','#ec4899','#eab308','#059669','#6b7280'][index] }">
+                                </div>
+                              </div>
+                              <span class="text-xs font-semibold text-slate-800 w-16 text-right">{{ fmt(item.amount) }}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Barra comparativa Diego vs Diana (solo en vista "Ambos") -->
+                        <div v-if="donutView === 'todos' && parejaPerfil" class="border-t border-slate-100 pt-3">
+                          <p class="text-xs text-gray-500 font-medium mb-2">¿Quién gasta más?</p>
+                          <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold text-emerald-700 w-8 text-right">{{ spendingComparativa.pctMio }}%</span>
+                            <div class="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden flex">
+                              <div class="h-full bg-emerald-500 rounded-l-full transition-all duration-500"
+                                :style="{ width: spendingComparativa.pctMio + '%' }"></div>
+                              <div class="h-full bg-blue-400 rounded-r-full transition-all duration-500"
+                                :style="{ width: spendingComparativa.pctPareja + '%' }"></div>
+                            </div>
+                            <span class="text-xs font-semibold text-blue-700 w-8">{{ spendingComparativa.pctPareja }}%</span>
+                          </div>
+                          <div class="flex justify-between mt-1.5">
+                            <span class="text-[10px] text-emerald-600 flex items-center gap-1">
+                              <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                              {{ miPerfil?.nombre }} · {{ fmt(spendingComparativa.mio) }}
+                            </span>
+                            <span class="text-[10px] text-blue-600 flex items-center gap-1">
+                              {{ fmt(spendingComparativa.pareja) }} · {{ parejaPerfil?.nombre }}
+                              <span class="w-2 h-2 rounded-full bg-blue-400 inline-block"></span>
+                            </span>
                           </div>
                         </div>
                       </div>
