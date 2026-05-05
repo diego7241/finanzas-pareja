@@ -38,6 +38,8 @@ const modal = ref(false)
 const filt = ref('all')
 const searchQuery = ref('')
 const selectedCategory = ref('all')
+// FIX: filtro de mes — por defecto el mes actual
+const selectedMonth = ref(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
 const formError = ref('')
 const saving = ref(false)
 const loading = ref(false)
@@ -192,12 +194,9 @@ const myBal = computed(() => {
 
 const pBal = computed(() => {
   // SOLO usamos las transacciones que la pareja registró ella misma (individual_mio)
-  // Excluimos "individual_tuyo" registradas por el usuario actual porque crean
-  // una asimetría: Diego ve 117, Diana ve 152 — ahora ambos verán el mismo número.
   let bal = parejaPerfil.value
     ? (parejaPerfil.value.saldo_inicial_mio || 0)
     : (miPerfil.value?.saldo_inicial_pareja || 0)
-
   if (parejaPerfil.value) {
     txns.value
       .filter(t => t.perfil_id === parejaPerfil.value.id && t.tipo === 'individual_mio')
@@ -215,8 +214,39 @@ const sBal = computed(() => {
   return bal
 })
 
+// ==========================================
+// FILTRO POR MES
+// ==========================================
+const availableMonths = computed(() => {
+  const months = new Set()
+  txns.value.forEach(t => {
+    const d = new Date(t.creado_en)
+    months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  })
+  return Array.from(months).sort().reverse()
+})
+
+const monthLabel = (ym) => {
+  const [y, m] = ym.split('-')
+  const nombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+  return `${nombres[parseInt(m) - 1]} ${y}`
+}
+
+const txnsFiltradosMes = computed(() => {
+  if (selectedMonth.value === 'all') return txns.value
+  return txns.value.filter(t => {
+    const d = new Date(t.creado_en)
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    return ym === selectedMonth.value
+  })
+})
+
+// ==========================================
+// FILTROS Y AGRUPACIÓN
+// ==========================================
 const filteredTxns = computed(() => {
-  let list = txns.value
+  // FIX: usa txnsFiltradosMes en vez de txns para respetar el filtro de mes
+  let list = txnsFiltradosMes.value
   if (filt.value !== 'all') list = list.filter(t => getRelativeType(t) === filt.value)
   if (selectedCategory.value !== 'all') list = list.filter(t => t.categoria === selectedCategory.value)
   const search = searchQuery.value.trim().toLowerCase()
@@ -226,9 +256,11 @@ const filteredTxns = computed(() => {
   return list
 })
 
+// FIX: availableCategories respeta el filtro de persona activo → Diana no ve categorías de Diego
 const availableCategories = computed(() => {
   const cats = new Set()
-  txns.value.filter(t => filt.value === 'all' || getRelativeType(t) === filt.value)
+  txnsFiltradosMes.value
+    .filter(t => filt.value === 'all' || getRelativeType(t) === filt.value)
     .forEach(t => cats.add(t.categoria || 'Otros'))
   return Array.from(cats).sort((a, b) => a.localeCompare(b, 'es-PE'))
 })
@@ -256,7 +288,7 @@ const groupedTxns = computed(() => {
   return Object.entries(sections).map(([label, items]) => ({ label, items }))
 })
 
-const hasActiveFilters = computed(() => filt.value !== 'all' || selectedCategory.value !== 'all' || searchQuery.value.trim() !== '')
+const hasActiveFilters = computed(() => filt.value !== 'all' || selectedCategory.value !== 'all' || searchQuery.value.trim() !== '' || selectedMonth.value !== `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
 
 const searchCount = computed(() => filteredTxns.value.length)
 
@@ -264,17 +296,17 @@ const clearAllFilters = () => {
   filt.value = 'all'
   selectedCategory.value = 'all'
   searchQuery.value = ''
+  selectedMonth.value = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
 }
 
-// FIX: retorna número, no string
-const totalSpent = computed(() => txns.value.filter(t => !t.es_ingreso).reduce((s, t) => s + Number(t.monto), 0))
+const totalSpent = computed(() => txns.value.filter(t => !t.es_ingreso && !isDebtPayment(t)).reduce((s, t) => s + Number(t.monto), 0))
 const totalDeudas = computed(() => deudas.value.reduce((s, d) => s + (Number(d.monto) - Number(d.monto_pagado || 0)), 0))
 
-// Un solo computed que calcula todo de una pasada
+// FIX: statsMovimientos usa txnsFiltradosMes + abonos a deuda restan del neto
 const statsMovimientos = computed(() => {
   const tipos = ['individual_mio', 'individual_tuyo', 'compartido']
   const stats = Object.fromEntries(tipos.map(t => [t, { gastos: 0, ingresos: 0, neto: 0, count: 0, debtPaid: 0, catMap: {} }]))
-  txns.value.forEach(t => {
+  txnsFiltradosMes.value.forEach(t => {
     const tipo = getRelativeType(t)
     if (!stats[tipo]) return
     const monto = Number(t.monto)
@@ -283,6 +315,7 @@ const statsMovimientos = computed(() => {
       stats[tipo].neto += monto
     } else if (isDebtPayment(t)) {
       stats[tipo].debtPaid += monto
+      stats[tipo].neto -= monto  // FIX: abono a deuda sí resta del neto (flujo real)
     } else {
       stats[tipo].gastos += monto
       stats[tipo].neto -= monto
@@ -314,11 +347,11 @@ const donutCategories = computed(() => {
   return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount)
 })
 
-// Totales por persona para la barra comparativa
+// FIX: spendingComparativa excluye abonos a deuda para no distorsionar "¿quién gasta más?"
 const spendingComparativa = computed(() => {
-  const mio = txns.value.filter(t => !t.es_ingreso && t.perfil_id === miPerfil.value?.id)
+  const mio = txns.value.filter(t => !t.es_ingreso && !isDebtPayment(t) && t.perfil_id === miPerfil.value?.id)
     .reduce((s, t) => s + Number(t.monto), 0)
-  const pareja = txns.value.filter(t => !t.es_ingreso && parejaPerfil.value && t.perfil_id === parejaPerfil.value.id)
+  const pareja = txns.value.filter(t => !t.es_ingreso && !isDebtPayment(t) && parejaPerfil.value && t.perfil_id === parejaPerfil.value.id)
     .reduce((s, t) => s + Number(t.monto), 0)
   const total = mio + pareja || 1
   return { mio, pareja, pctMio: Math.round((mio / total) * 100), pctPareja: Math.round((pareja / total) * 100) }
@@ -338,9 +371,9 @@ const greetingEmoji = computed(() => {
   return h < 12 ? '🌅' : h < 18 ? '☀️' : '🌙'
 })
 
-// Banner dinámico con insight real
+// FIX: insightBanner excluye abonos a deuda del cálculo de categoría principal
 const insightBanner = computed(() => {
-  const gastos = txns.value.filter(t => !t.es_ingreso)
+  const gastos = txns.value.filter(t => !t.es_ingreso && !isDebtPayment(t))
   if (txns.value.length === 0) return 'Sin movimientos aún → registra el primero ↗'
   if (gastos.length === 0) return 'Solo ingresos registrados → ver historial ↗'
   const topCat = gastos.reduce((acc, t) => { acc[t.categoria] = (acc[t.categoria] || 0) + Number(t.monto); return acc }, {})
@@ -633,6 +666,17 @@ const aportarMeta = async (meta) => {
 
 // FIX: stroke-dasharray como string (no array) para compatibilidad SVG
 const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
+
+// Sugerencia de aporte mensual para metas compartidas
+const sugerenciaAporte = (goal) => {
+  if (!goal.es_compartida || pct(goal) >= 100) return null
+  const falta = Number(goal.monto_meta) - Number(goal.monto_actual)
+  if (!goal.fecha_limite) return { mensual: null, falta }
+  const meses = Math.max(1, Math.ceil(
+    (new Date(goal.fecha_limite) - new Date()) / (1000 * 60 * 60 * 24 * 30)
+  ))
+  return { mensual: Math.ceil((falta / meses) / 2), falta, meses }
+}
 </script>
 
 <template>
@@ -828,7 +872,6 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
 
                   <div>
                     <div class="p-4 rounded-2xl border border-slate-100 bg-white mb-5">
-                      <!-- Header con título y tabs de vista -->
                       <div class="flex items-center justify-between mb-4">
                         <h3 class="text-base font-semibold text-gray-800">Gastos por categoría</h3>
                         <div class="flex gap-1 bg-gray-100 p-1 rounded-xl">
@@ -845,7 +888,6 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                         Sin gastos registrados para esta vista
                       </div>
                       <div v-else>
-                        <!-- Donut -->
                         <div class="relative w-40 h-40 mx-auto mb-4">
                           <canvas ref="donutCanvas" class="w-full h-full"></canvas>
                           <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -856,7 +898,6 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                           </div>
                         </div>
 
-                        <!-- Leyenda -->
                         <div class="grid grid-cols-1 gap-1.5 mb-4">
                           <div v-for="(item, index) in donutCategories" :key="item.category"
                             class="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 transition-colors">
@@ -936,6 +977,22 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                 </div>
 
                 <div class="grid gap-4 mb-4">
+                  <!-- FIX: selector de mes -->
+                  <div class="flex flex-wrap gap-2 items-center">
+                    <span class="text-xs text-gray-500 font-medium mr-1">📅 Mes:</span>
+                    <button @click="selectedMonth = 'all'"
+                      :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
+                        selectedMonth === 'all' ? 'bg-slate-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
+                      Todos
+                    </button>
+                    <button v-for="ym in availableMonths" :key="ym"
+                      @click="selectedMonth = ym"
+                      :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors',
+                        selectedMonth === ym ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
+                      {{ monthLabel(ym) }}
+                    </button>
+                  </div>
+
                   <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <label class="relative w-full sm:w-[min(420px,100%)]">
                       <input v-model="searchQuery" type="search" placeholder="Buscar movimiento, categoría o método..."
@@ -952,7 +1009,7 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
 
                   <div class="flex flex-wrap gap-2 items-center">
                     <button @click="filt = 'all'" :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors', filt === 'all' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
-                      Todos ({{ txns.length }})
+                      Todos ({{ txnsFiltradosMes.length }})
                     </button>
                     <button @click="filt = 'individual_mio'" :class="['px-3 py-1.5 rounded-full text-xs font-semibold transition-colors', filt === 'individual_mio' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200']">
                       {{ miPerfil?.nombre || 'Tú' }}
@@ -1062,16 +1119,16 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                           </div>
                           <div class="min-w-0">
                             <div class="flex items-center gap-2 mb-1 flex-wrap">
-                            <p class="text-sm font-semibold text-gray-800 truncate">{{ txn.descripcion }}</p>
-                            <span v-if="isDebtPayment(txn)" class="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
-                              Pago deuda
-                            </span>
-                          </div>
-                          <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-500">
-                            <span>{{ formatDate(txn.creado_en) }}</span>
-                            <span :class="['px-2 py-0.5 rounded-full font-medium', CC[txn.categoria]?.bg, CC[txn.categoria]?.tx]">{{ txn.categoria }}</span>
-                            <span>{{ getQuienHizoGasto(txn) }}</span>
-                            <span v-if="txn.metodo_pago" class="flex items-center gap-1 text-gray-400">
+                              <p class="text-sm font-semibold text-gray-800 truncate">{{ txn.descripcion }}</p>
+                              <span v-if="isDebtPayment(txn)" class="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700 bg-amber-100 px-2 py-1 rounded-full">
+                                Pago deuda
+                              </span>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-500">
+                              <span>{{ formatDate(txn.creado_en) }}</span>
+                              <span :class="['px-2 py-0.5 rounded-full font-medium', CC[txn.categoria]?.bg, CC[txn.categoria]?.tx]">{{ txn.categoria }}</span>
+                              <span>{{ getQuienHizoGasto(txn) }}</span>
+                              <span v-if="txn.metodo_pago" class="flex items-center gap-1 text-gray-400">
                                 <component :is="METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.icon || DollarSign" class="w-3.5 h-3.5" />
                                 {{ METODOS_PAGO.find(m => m.id === txn.metodo_pago)?.label }}
                               </span>
@@ -1117,7 +1174,9 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                   <p class="text-slate-500 text-sm">Sin metas aún. ¡Crea la primera!</p>
                 </div>
                 <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div v-for="goal in goals" :key="goal.id" class="p-4 border border-gray-100 rounded-2xl bg-white hover:shadow-sm transition-shadow">
+                  <div v-for="goal in goals" :key="goal.id"
+                    :class="['p-4 border rounded-2xl bg-white hover:shadow-sm transition-shadow',
+                      goal.es_compartida && pct(goal) < 100 ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-100']">
                     <div class="flex justify-between items-start mb-4">
                       <div>
                         <h3 class="font-semibold text-gray-800 text-sm">{{ goal.nombre }}</h3>
@@ -1129,7 +1188,6 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                         <Trash2 class="w-4 h-4" />
                       </button>
                     </div>
-                    <!-- FIX: stroke-dasharray como string, no array -->
                     <div class="flex justify-center mb-4">
                       <div class="relative w-20 h-20">
                         <svg viewBox="0 0 80 80" class="w-full h-full -rotate-90">
@@ -1149,6 +1207,19 @@ const ringDash = (goal) => `${(pct(goal) / 100 * 201).toFixed(1)} 201`
                       <span>{{ fmt(goal.monto_actual) }}</span>
                       <span class="font-medium text-gray-700">{{ fmt(goal.monto_meta) }}</span>
                     </div>
+
+                    <!-- RECORDATORIO MANCOMUNADA -->
+                    <div v-if="goal.es_compartida && pct(goal) < 100 && sugerenciaAporte(goal)" class="mb-3 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                      <p class="text-xs font-semibold text-blue-700 mb-0.5">💡 ¿Ya aportaron este mes?</p>
+                      <p v-if="sugerenciaAporte(goal).mensual" class="text-xs text-blue-600">
+                        Para llegar en {{ sugerenciaAporte(goal).meses }} meses, cada uno aportaría
+                        <span class="font-bold">{{ fmt(sugerenciaAporte(goal).mensual) }}/mes</span>
+                      </p>
+                      <p v-else class="text-xs text-blue-600">
+                        Falta <span class="font-bold">{{ fmt(sugerenciaAporte(goal).falta) }}</span> — ponle una fecha límite para ver cuánto aportar cada mes
+                      </p>
+                    </div>
+
                     <div class="flex items-center gap-2 pt-3 border-t border-gray-50">
                       <input type="number" v-model="metaInputs[goal.id]" placeholder="S/ monto"
                         class="flex-1 p-1.5 text-xs border border-gray-200 rounded-lg focus:ring-emerald-500 focus:border-emerald-500" step="0.01">
